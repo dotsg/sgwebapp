@@ -86,19 +86,19 @@ ${BOLD}OPTIONS (install):${RESET}
   --force                       Overwrite an existing app bundle of the same name
 
 ${BOLD}EXAMPLES:${RESET}
-  sgwebapp install "Solaree" "https://solaree.ai/index_cn.html"
-  sgwebapp install "Solaree" "https://solaree.ai/index_cn.html" --padding 10
+  sgwebapp install "WhatsApp Web" "https://web.whatsapp.com"
+  sgwebapp install "WhatsApp Web" "https://web.whatsapp.com" --padding 10
   sgwebapp install "Google Maps" "https://www.google.com/maps"
   sgwebapp config set padding 10.0
   sgwebapp config set border_color 89b4fa
   sgwebapp config set border_radius 18.0
   sgwebapp config reset
   sgwebapp list
-  sgwebapp launch "Solaree"
+  sgwebapp launch "WhatsApp Web"
   sgwebapp border start
-  sgwebapp import-cookies "Solaree"
+  sgwebapp import-cookies "WhatsApp Web"
   sgwebapp cookies status
-  sgwebapp remove "Solaree"
+  sgwebapp remove "WhatsApp Web"
 
 EOF
 }
@@ -481,9 +481,9 @@ cmd_install() {
       app_name="${pos_args[0]}"
     else
       echo -e "${BOLD}Create a new macOS Web App${RESET}"
-      read -rp "App Name (e.g. Solaree): " app_name
+      read -rp "App Name (e.g. WhatsApp Web): " app_name
     fi
-    read -rp "App URL (e.g. https://solaree.ai/index_cn.html): " app_url
+    read -rp "App URL (e.g. https://web.whatsapp.com): " app_url
     if [[ -z "$custom_icon" ]]; then
       read -rp "Custom Icon URL/path (optional, press Enter to auto-detect): " custom_icon
     fi

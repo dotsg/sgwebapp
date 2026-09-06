@@ -35,10 +35,10 @@ Two mechanisms reduce that cost.
 ### 1. Seed a login from Chrome — `sgwebapp import-cookies`
 
 ```bash
-sgwebapp import-cookies "Solaree"                 # its own domain
+sgwebapp import-cookies "WhatsApp Web"            # its own domain
 sgwebapp import-cookies "Gmail" --domain google.com
 sgwebapp import-cookies "X" --browser brave --profile "Profile 1"
-sgwebapp import-cookies "Solaree" --dry-run       # show the domains, prompt nothing
+sgwebapp import-cookies "WhatsApp Web" --dry-run  # show the domains, prompt nothing
 ```
 
 `--dry-run` prints which domains would be read and where the result would be

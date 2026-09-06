@@ -50,19 +50,19 @@ sudo make install
 ### 1. Install a Web App (Frameless with 0 Top Bar & Border)
 ```bash
 # Default: Native frameless engine (0 topbar, 0 traffic lights, beautiful border)
-sgwebapp install "Solaree" "https://solaree.ai/index_cn.html"
+sgwebapp install "WhatsApp Web" "https://web.whatsapp.com"
 sgwebapp install "Google Maps" "https://www.google.com/maps"
 
 # Customize the accent border color and width:
 sgwebapp install "GitHub" "https://github.com" --border-color "3b82f6" --border-width 3.0
 
 # Optional: If you prefer Chrome's engine directly (retaining standard 28px traffic lights):
-sgwebapp install "Solaree" "https://solaree.ai/index_cn.html" --engine chrome
+sgwebapp install "WhatsApp Web" "https://web.whatsapp.com" --engine chrome
 ```
 
 Once installed:
-- Press <kbd>Cmd</kbd> + <kbd>Space</kbd>, type `Solaree` or `Google Maps`, and press <kbd>Enter</kbd>.
-- Or launch from the terminal: `sgwebapp launch "Solaree"`.
+- Press <kbd>Cmd</kbd> + <kbd>Space</kbd>, type `WhatsApp Web` or `Google Maps`, and press <kbd>Enter</kbd>.
+- Or launch from the terminal: `sgwebapp launch "WhatsApp Web"`.
 
 ### 2. List Installed Web Apps
 ```bash
@@ -72,13 +72,13 @@ Output:
 ```
 APP NAME                  URL                                           PATH
 --------                  ---                                           ----
-Solaree                   https://solaree.ai/index_cn.html              /Users/wuvist/Applications/Solaree.app
+WhatsApp Web              https://web.whatsapp.com                      /Users/wuvist/Applications/WhatsApp Web.app
 Google Maps               https://www.google.com/maps                   /Users/wuvist/Applications/Google Maps.app
 ```
 
 ### 3. Launch an App or URL
 ```bash
-sgwebapp launch "Solaree"
+sgwebapp launch "WhatsApp Web"
 # Or open any URL directly in app mode:
 sgwebapp launch "https://news.ycombinator.com"
 ```
@@ -86,7 +86,7 @@ sgwebapp launch "https://news.ycombinator.com"
 ### 4. Remove a Web App
 ```bash
 # Non-interactive:
-sgwebapp remove "Solaree"
+sgwebapp remove "WhatsApp Web"
 
 # Interactive (prompts with a list):
 sgwebapp remove
@@ -126,7 +126,7 @@ You can also override the style when installing an individual app:
 sgwebapp install "Google Maps" "https://www.google.com/maps"
 
 # Full-bleed style without frosted margin (padding: 0)
-sgwebapp install "Solaree" "https://solaree.ai/index_cn.html" --padding 0.0
+sgwebapp install "WhatsApp Web" "https://web.whatsapp.com" --padding 0.0
 
 # Custom accent style for a specific app
 sgwebapp install "GitHub" "https://github.com" --border-color "3b82f6" --border-width 2.0 --border-radius 26.0 --padding 8.0
@@ -171,11 +171,11 @@ Options:
 Each app created by `sgwebapp` is a standard macOS application bundle located in `~/Applications/<AppName>.app`:
 
 ```
-~/Applications/Solaree.app/
+~/Applications/WhatsApp Web.app/
 ├── Contents/
 │   ├── Info.plist                     # App metadata, bundle id, border & login settings
 │   ├── MacOS/
-│   │   └── Solaree                    # Native engine: a copy of sgwebapp-runtime
+│   │   └── WhatsApp Web               # Native engine: a copy of sgwebapp-runtime
 │   │                                  # Chrome engine: a `launcher` script running chrome --app
 │   └── Resources/
 │       ├── AppIcon.icns               # 10-tier high-res Apple icon
