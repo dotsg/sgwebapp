@@ -62,7 +62,7 @@ var borderWidth: CGFloat = {
 }()
 var cornerRadius: CGFloat = {
     if let r = globalConfig["border_radius"] as? Double { return CGFloat(r) }
-    return 18.0
+    return 10.0
 }()
 var targetAppNames: Set<String> = ["Google Chrome", "Brave Browser", "Microsoft Edge", "Chromium", "Arc"]
 var matchAllApps = false
@@ -88,7 +88,7 @@ while let arg = args.first {
         Options:
           --color <hex|tahoe> Border color (hex e.g. 89b4fa, or 'tahoe' for dynamic glass, default: tahoe)
           --width <float>     Border width (default: 1.2)
-          --radius <float>    Corner radius (default: 18.0)
+          --radius <float>    Corner radius (default: 10.0)
           --all-apps          Show border on all active applications
           --app <name>        Add application name to match list
           --help, -h          Show this help message

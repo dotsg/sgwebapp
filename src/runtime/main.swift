@@ -182,7 +182,7 @@ var borderWidth: CGFloat = {
 var cornerRadius: CGFloat = {
     if let r = Bundle.main.object(forInfoDictionaryKey: "SGWebAppCornerRadius") as? Double { return CGFloat(r) }
     if let r = globalConfig["border_radius"] as? Double { return CGFloat(r) }
-    return 18.0
+    return 10.0
 }()
 
 var contentPadding: CGFloat = {
@@ -251,10 +251,12 @@ class TopDraggableView: NSView {
 class BorderView: NSView {
     let borderOverlay = CALayer()
     let maskLayer = CALayer()
+    let webMaskLayer = CALayer()
     let visualEffectView = NSVisualEffectView()
     weak var webView: WKWebView?
     var currentBorderWidth: CGFloat = 1.2
-    var currentCornerRadius: CGFloat = 18.5
+    var currentCornerRadius: CGFloat = 10.0
+    var currentPadding: CGFloat = 0.0
     var colorSpec: String = "tahoe"
 
     override init(frame frameRect: NSRect) {
@@ -266,6 +268,7 @@ class BorderView: NSView {
         visualEffectView.material = .windowBackground
         visualEffectView.blendingMode = .behindWindow
         visualEffectView.state = .active
+        visualEffectView.wantsLayer = true
         addSubview(visualEffectView, positioned: .below, relativeTo: nil)
 
         maskLayer.backgroundColor = NSColor.black.cgColor
@@ -274,6 +277,9 @@ class BorderView: NSView {
         layer?.cornerCurve = .continuous
         layer?.masksToBounds = true
 
+        webMaskLayer.backgroundColor = NSColor.black.cgColor
+        webMaskLayer.cornerCurve = .continuous
+
         borderOverlay.cornerCurve = .continuous
         borderOverlay.zPosition = 999
         layer?.addSublayer(borderOverlay)
@@ -281,15 +287,18 @@ class BorderView: NSView {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    func updateBorder(width: CGFloat, radius: CGFloat, colorSpec: String) {
+    func updateBorder(width: CGFloat, radius: CGFloat, padding: CGFloat, colorSpec: String) {
         currentBorderWidth = width
         currentCornerRadius = radius
+        currentPadding = padding
         self.colorSpec = colorSpec
 
         let resolvedColor = resolveBorderColor(colorSpec, appearance: effectiveAppearance)
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+
+        visualEffectView.frame = bounds
 
         maskLayer.frame = bounds
         maskLayer.cornerRadius = radius
@@ -300,10 +309,14 @@ class BorderView: NSView {
         borderOverlay.borderWidth = width
         borderOverlay.borderColor = resolvedColor
 
-        let totalInset = width
+        let totalInset = width + padding
         if let wv = webView {
             wv.frame = bounds.insetBy(dx: totalInset, dy: totalInset)
-            wv.layer?.cornerRadius = max(0, radius - totalInset)
+            let innerRadius = max(0, radius - totalInset)
+            webMaskLayer.frame = wv.bounds
+            webMaskLayer.cornerRadius = innerRadius
+            wv.layer?.mask = innerRadius > 0 ? webMaskLayer : nil
+            wv.layer?.cornerRadius = innerRadius
             wv.layer?.cornerCurve = .continuous
             wv.layer?.masksToBounds = true
         }
@@ -312,12 +325,12 @@ class BorderView: NSView {
 
     override func layout() {
         super.layout()
-        updateBorder(width: currentBorderWidth, radius: currentCornerRadius, colorSpec: colorSpec)
+        updateBorder(width: currentBorderWidth, radius: currentCornerRadius, padding: currentPadding, colorSpec: colorSpec)
     }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        updateBorder(width: currentBorderWidth, radius: currentCornerRadius, colorSpec: colorSpec)
+        updateBorder(width: currentBorderWidth, radius: currentCornerRadius, padding: currentPadding, colorSpec: colorSpec)
     }
 }
 
@@ -626,40 +639,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             config.preferences.setValue(true, forKey: "developerExtrasEnabled")
         }
 
-        if contentPadding > 0 {
-            let paddingCSS = """
-            :root {
-                --sgwebapp-safe-padding: \(contentPadding)px;
-            }
-            body {
-                padding-top: var(--sgwebapp-safe-padding) !important;
-                padding-left: var(--sgwebapp-safe-padding) !important;
-                padding-right: var(--sgwebapp-safe-padding) !important;
-                padding-bottom: var(--sgwebapp-safe-padding) !important;
-                box-sizing: border-box !important;
-            }
-            """
-            let scriptSource = """
-            (function() {
-                function injectPadding() {
-                    if (document.getElementById('sgwebapp-insets')) return;
-                    const style = document.createElement('style');
-                    style.id = 'sgwebapp-insets';
-                    style.textContent = `\(paddingCSS)`;
-                    (document.head || document.documentElement).appendChild(style);
-                }
-                if (document.readyState === 'loading') {
-                    document.addEventListener('DOMContentLoaded', injectPadding);
-                } else {
-                    injectPadding();
-                }
-            })();
-            """
-            let userScript = WKUserScript(source: scriptSource, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
-            config.userContentController.addUserScript(userScript)
-        }
-
-        let totalInset = borderWidth
+        let totalInset = borderWidth + contentPadding
         let webFrame = borderView.bounds.insetBy(dx: totalInset, dy: totalInset)
         webView = WKWebView(frame: webFrame, configuration: config)
         webView.autoresizingMask = [.width, .height]
@@ -685,7 +665,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         borderView.webView = webView
         borderView.addSubview(webView)
-        borderView.updateBorder(width: borderWidth, radius: cornerRadius, colorSpec: borderColorHex)
+        borderView.updateBorder(width: borderWidth, radius: cornerRadius, padding: contentPadding, colorSpec: borderColorHex)
 
         let dragBarHeight: CGFloat = max(20.0, contentPadding > 0 ? contentPadding + 6.0 : 20.0)
         let dragBar = TopDraggableView(frame: NSRect(x: 0, y: borderView.bounds.height - dragBarHeight, width: borderView.bounds.width, height: dragBarHeight))
