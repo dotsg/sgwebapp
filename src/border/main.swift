@@ -59,7 +59,7 @@ var borderColorHex = globalConfig["border_color"] as? String ?? "tahoe"
 var borderWidth: CGFloat = {
     if let w = globalConfig["border_width"] as? Double { return CGFloat(w) }
     if let n = globalConfig["border_width"] as? NSNumber { return CGFloat(n.doubleValue) }
-    return 1.0
+    return 0.5
 }()
 var cornerRadius: CGFloat = {
     if let r = globalConfig["border_radius"] as? Double { return CGFloat(r) }
@@ -89,7 +89,7 @@ while let arg = args.first {
         Usage: sgwebapp-border [options]
         Options:
           --color <hex|tahoe> Border color (hex e.g. 89b4fa, or 'tahoe' for dynamic glass, default: tahoe)
-          --width <float>     Border width (default: 1.0)
+          --width <float>     Border width (default: 0.5)
           --radius <float>    Corner radius (default: 26.0)
           --all-apps          Show border on all active applications
           --app <name>        Add application name to match list

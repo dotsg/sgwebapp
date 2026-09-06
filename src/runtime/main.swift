@@ -178,7 +178,7 @@ var borderWidth: CGFloat = {
     if let n = Bundle.main.object(forInfoDictionaryKey: "SGWebAppBorderWidth") as? NSNumber { return CGFloat(n.doubleValue) }
     if let w = globalConfig["border_width"] as? Double { return CGFloat(w) }
     if let n = globalConfig["border_width"] as? NSNumber { return CGFloat(n.doubleValue) }
-    return 1.0
+    return 0.5
 }()
 
 var cornerRadius: CGFloat = {
@@ -260,7 +260,7 @@ class BorderView: NSView {
     let webMaskLayer = CALayer()
     let visualEffectView = NSVisualEffectView()
     weak var webView: WKWebView?
-    var currentBorderWidth: CGFloat = 1.0
+    var currentBorderWidth: CGFloat = 0.5
     var currentCornerRadius: CGFloat = 26.0
     var currentPadding: CGFloat = 8.0
     var colorSpec: String = "tahoe"

@@ -98,7 +98,7 @@ sgwebapp remove
 
 `sgwebapp` defaults to native macOS window aesthetics (matching Finder and system apps 100%):
 - **macOS Finder squircle corners**: `26.0 pt` outer corner radius (continuous G2 curvature).
-- **Ultra-fine glass stroke**: `1.0 pt` hairline border width.
+- **Ultra-fine glass stroke**: `0.5 pt` hairline border width (exact 1 physical pixel on Retina display).
 - **Dynamic appearance**: Border color `"tahoe"` automatically shifts between a luminous translucent white outline (`alpha 0.22`) in Dark Mode and a refined subtle dark outline (`alpha 0.18`) in Light Mode.
 - **Native content inset padding**: `8.0 pt` content inset padding revealing the frosted backdrop blur around the web application, identical to Finder's sidebar margin.
 
@@ -111,7 +111,7 @@ sgwebapp config
 
 # Set default border to a colorful accent (e.g. Catppuccin Blue, Emerald, or Rose)
 sgwebapp config set border_color 89b4fa
-sgwebapp config set border_width 1.0
+sgwebapp config set border_width 0.5
 sgwebapp config set border_radius 26.0
 sgwebapp config set padding 8.0
 
@@ -122,7 +122,7 @@ sgwebapp config reset
 ### Per-App Customization
 You can also override the style when installing an individual app:
 ```bash
-# macOS Finder native style (default: radius 26pt, padding 8pt, border 1.0pt)
+# macOS Finder native style (default: radius 26pt, padding 8pt, border 0.5pt)
 sgwebapp install "Google Maps" "https://www.google.com/maps"
 
 # Full-bleed style without frosted margin (padding: 0)
