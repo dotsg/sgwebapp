@@ -1,20 +1,22 @@
 # sgwebapp 🚀
 
 > **Bringing Omarchy's Web App experience to macOS.**  
-> Convert any website into a standalone, distraction-free macOS desktop app in seconds — with 100% native Chrome cookie sharing, retina `.icns` icons, Spotlight integration, and optional Hyprland-style active window borders.
+> Convert any website into a standalone, distraction-free macOS desktop app in seconds — frameless by default, with retina `.icns` icons, Spotlight integration, optional Chrome login import, and Hyprland-style active window borders.
 
 ---
 
 ## 🌟 Features
 
 - **🚫 True 0-Topbar & 0-Traffic-Light Mode (Native Engine, Default)**: A compiled native Cocoa/WebKit runner that creates 100% frameless windows with zero title bars and zero traffic lights, surrounded by a customizable Hyprland-style rounded accent border.
-- **🍪 Dual Engine Support**:
-  - **Native Engine (`--engine native`, Default)**: Completely frameless (0 titlebar, 0 traffic lights), native WebKit GPU acceleration, independent Dock icon and name, persistent cookie store.
-  - **Chrome Engine (`--engine chrome`)**: Direct Chromium `--app` mode reusing Google Chrome's live active profile and cookies.
+- **🍪 Two Engines, One Real Trade-off**: macOS draws the traffic lights inside the browser's own process, so *frameless* and *reuses Chrome's live session* cannot both be true. Pick per app:
+  - **Native Engine (`--engine native`, Default)**: Completely frameless (0 titlebar, 0 traffic lights), native WebKit, independent Dock icon and name, its own persistent cookie store. **Sites start out logged out** — see below.
+  - **Chrome Engine (`--engine chrome`)**: Direct Chromium `--app` mode reusing Google Chrome's live profile and cookies, but keeping the standard macOS title bar. Use it for Widevine DRM, Chrome-bound passkeys, or extension-dependent sites.
+- **🔑 Login Handling for the Native Engine**: `sgwebapp import-cookies <app>` seeds an app from your Chrome profile, and SSO cookies are synced between sgwebapp apps so you sign in to Google or GitHub once. Both are explained — including their limits and the security trade-off — in [docs/cookies.md](docs/cookies.md).
 - **🎨 Retina macOS Icons (`.icns`)**: Automatically downloads high-resolution `apple-touch-icon` from target pages and builds native multi-size Apple `.icns` packages using macOS built-in `sips` and `iconutil`.
 - **🔍 Full macOS Desktop Integration**: Installs to `~/Applications/<Name>.app`. Fully indexable and launchable via **Spotlight (`Cmd + Space`)**, **Launchpad**, and the **Dock**.
 - **🪟 Built-in Native Border Daemon (`sgwebapp-border`)**: A standalone, zero-dependency Swift daemon that draws a customizable rounded border (inspired by Omarchy / Hyprland) around active windows.
 - **⚡ Ultra Lightweight**: Native runner is only ~100 KB! No Electron bloat, no Node.js runtime, instantaneous startup.
+- **🧩 Behaves Like a Browser Window**: `target="_blank"` and `window.open()` open real popup windows (so OAuth sign-in flows complete), `mailto:`/`tel:`/app links hand off to the OS, `<input type="file">` opens a picker, JavaScript dialogs render, and a failed load shows a retryable error page instead of a blank window.
 
 ---
 
@@ -171,16 +173,24 @@ Each app created by `sgwebapp` is a standard macOS application bundle located in
 ```
 ~/Applications/Solaree.app/
 ├── Contents/
-│   ├── Info.plist                     # App metadata & bundle identifier
+│   ├── Info.plist                     # App metadata, bundle id, border & login settings
 │   ├── MacOS/
-│   │   └── launcher                   # Executable script invoking Chrome --app
+│   │   └── Solaree                    # Native engine: a copy of sgwebapp-runtime
+│   │                                  # Chrome engine: a `launcher` script running chrome --app
 │   └── Resources/
 │       ├── AppIcon.icns               # 10-tier high-res Apple icon
-│       └── sgwebapp.json              # App URL, creation timestamp, browser
+│       └── sgwebapp.json              # URL, engine, border settings, creation timestamp
 ```
 
+Native-engine apps store website data under `~/Library/WebKit/<bundle-id>/`.
+That path is derived from the bundle identifier and cannot be shared between
+apps, which is why logins are handled through cookie sync rather than a shared
+profile — see [docs/cookies.md](docs/cookies.md).
+
 ### Browser Engine Resolution
-`sgwebapp` detects and supports the following Chromium-family browsers in order of preference:
+Only the Chrome engine and `import-cookies` need a browser on disk; native-engine
+installs work on a machine with no Chromium installed at all. When one is needed,
+`sgwebapp` looks for these in order of preference:
 1. `$SGWEBAPP_BROWSER` environment variable (if specified)
 2. Google Chrome (`/Applications/Google Chrome.app`)
 3. Brave Browser (`/Applications/Brave Browser.app`)
@@ -199,32 +209,44 @@ Each app created by `sgwebapp` is a standard macOS application bundle located in
 
 ## 📊 Comparison Matrix
 
-| Feature | `sgwebapp` | Chrome PWA | Safari Web App (Sonoma) | Electron / Pake |
-| :--- | :---: | :---: | :---: | :---: |
-| **Chrome Cookie Reuse** | **100% (Instant)** | 100% | ❌ Isolated sandbox | ❌ Requires re-login |
-| **Install Any Arbitrary URL** | **Yes** | Only if site has PWA manifest | Yes | Yes (requires build) |
-| **CLI Automation** | **Yes (`sgwebapp install`)** | ❌ Manual UI clicks | ❌ Manual UI clicks | Requires packaging |
-| **Distraction-Free Window** | **Yes** | Yes | Yes | Yes |
-| **Active Window Border** | **Yes (Built-in Swift daemon)** | ❌ No | ❌ No | ❌ Custom CSS only |
-| **Disk & RAM Footprint** | **~1 MB (Shared Chrome engine)** | ~1 MB | ~1 MB | 100 MB - 300 MB |
+| Feature | `sgwebapp` native | `sgwebapp` chrome | Chrome PWA | Safari Web App | Electron / Pake |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **No traffic lights / title bar** | **Yes** | ❌ No | ❌ No | ❌ No | Custom work |
+| **Chrome cookie reuse** | Import on request | **Live** | Live | ❌ Isolated | ❌ Re-login |
+| **Install any arbitrary URL** | **Yes** | **Yes** | Only with a PWA manifest | Yes | Yes (needs build) |
+| **CLI automation** | **Yes** | **Yes** | ❌ Manual clicks | ❌ Manual clicks | Needs packaging |
+| **Active window border** | **Built in** | Via daemon | ❌ No | ❌ No | Custom CSS only |
+| **Widevine DRM** | ❌ WebKit | **Yes** | Yes | Yes | Varies |
+| **Disk & RAM footprint** | **~1 MB** | ~1 MB | ~1 MB | ~1 MB | 100–300 MB |
 
 ---
 
 ## 🧪 Testing
 
-Run the included automated regression test suite:
+Run the automated regression suite. It works inside a temporary sandbox and
+never touches your real `~/.config/sgwebapp` or `~/Applications`:
 
 ```bash
-make test
+make test        # CLI, safety and unit tests
+make test-e2e    # launches a real .app against a local server (needs a desktop session)
+make lint        # shellcheck, if installed
 ```
 
-This verifies:
-- CLI command validation and help outputs
-- Swift daemon compilation
-- `.app` bundle structure and metadata creation
-- Listing and filtering
-- Daemon lifecycle (`start`, `status`, `stop`)
-- Clean application removal and deregistration
+`make test` verifies:
+- CLI command validation and help output
+- Swift compilation of both binaries
+- `.app` bundle structure, a lint-clean `Info.plist` and valid metadata JSON
+- Correct escaping for names/URLs containing `&` and quotes, and distinct bundle
+  identifiers for non-ASCII app names
+- Refusal to overwrite or delete a `.app` sgwebapp did not create, rejection of
+  path traversal in an app name, and that config keys cannot inject code
+- Daemon lifecycle (`start`, `status`, `stop`) and config get/set/reset
+- Chrome cookie decryption (AES-CBC, PKCS7, the Chrome 118+ hash prefix, domain
+  filtering) against a synthetic database
+
+`make test-e2e` additionally proves, against a real running app, that staged
+cookies reach the page before its first request, that `window.open` popups load,
+and that cookies are written back to the jar with `0600` permissions.
 
 ---
 

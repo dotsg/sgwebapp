@@ -7,13 +7,26 @@
 set -euo pipefail
 
 VERSION="1.0.0"
-CONFIG_DIR="$HOME/.config/sgwebapp"
+# Both roots are overridable so the test suite never touches the real ones.
+CONFIG_DIR="${SGWEBAPP_CONFIG_DIR:-$HOME/.config/sgwebapp}"
 CONFIG_FILE="$CONFIG_DIR/config.json"
-APPS_DIR="$HOME/Applications"
+APPS_DIR="${SGWEBAPP_APPS_DIR:-$HOME/Applications}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BORDER_BIN="$SCRIPT_DIR/sgwebapp-border"
 RUNTIME_BIN="$SCRIPT_DIR/sgwebapp-runtime"
 PID_FILE="$CONFIG_DIR/border.pid"
+COOKIE_JAR="$CONFIG_DIR/cookiejar.json"
+PENDING_DIR="$CONFIG_DIR/pending"
+
+# Helper scripts and Swift sources live next to the repo when running from a
+# checkout, and under $PREFIX/share/sgwebapp once `make install` has run.
+TOOLS_DIR=""
+SRC_DIR=""
+for _cand in "$SCRIPT_DIR/../src" "$SCRIPT_DIR/../share/sgwebapp"; do
+  if [[ -d "$_cand/tools" && -z "$TOOLS_DIR" ]]; then TOOLS_DIR="$_cand/tools"; fi
+  if [[ -d "$_cand/runtime" && -z "$SRC_DIR" ]]; then SRC_DIR="$_cand"; fi
+done
+unset _cand
 CLEANUP_DIRS=()
 
 cleanup() {
@@ -27,12 +40,14 @@ cleanup() {
 trap cleanup EXIT
 
 # Colors for terminal output
-BOLD="\033[1m"
-GREEN="\033[0;32m"
-BLUE="\033[0;34m"
-YELLOW="\033[0;33m"
-RED="\033[0;31m"
-RESET="\033[0m"
+# ANSI-C quoting so the escapes are real characters: print_help pipes these
+# through `cat`, which does not interpret backslash escapes the way echo -e does.
+BOLD=$'\033[1m'
+GREEN=$'\033[0;32m'
+BLUE=$'\033[0;34m'
+YELLOW=$'\033[0;33m'
+RED=$'\033[0;31m'
+RESET=$'\033[0m'
 
 log_info() { echo -e "${BLUE}==>${RESET} ${BOLD}$1${RESET}"; }
 log_success() { echo -e "${GREEN}==>${RESET} ${BOLD}$1${RESET}"; }
@@ -54,6 +69,8 @@ ${BOLD}COMMANDS:${RESET}
   remove <name>                 Remove an installed web app
   config [get|set|reset]        View or update default border & engine configuration
   border <start|stop|status|run> Manage the native floating window border daemon
+  import-cookies <name>         Seed a web app's login from your Chrome profile
+  cookies <status|clear>        Inspect or wipe the shared login cookie jar
   version                       Show version information
   help                          Show this help message
 
@@ -64,6 +81,8 @@ ${BOLD}OPTIONS (install):${RESET}
   --border-radius <radius>      Corner radius in pt (default: 18.0)
   --padding <pt>                Content padding inside the border in pt (default: 0.0)
   --icon <path|url>             Custom application icon
+  --no-share-login              Do not sync SSO cookies with other sgwebapp apps
+  --force                       Overwrite an existing app bundle of the same name
 
 ${BOLD}EXAMPLES:${RESET}
   sgwebapp install "Solaree" "https://solaree.ai/index_cn.html"
@@ -76,6 +95,8 @@ ${BOLD}EXAMPLES:${RESET}
   sgwebapp list
   sgwebapp launch "Solaree"
   sgwebapp border start
+  sgwebapp import-cookies "Solaree"
+  sgwebapp cookies status
   sgwebapp remove "Solaree"
 
 EOF
@@ -130,9 +151,44 @@ normalize_url() {
   printf '%s' "$url"
 }
 
-# Sanitize app name for filenames and bundle identifier
+# Sanitize app name for filenames and bundle identifier.
+# Names with no ASCII alphanumerics at all (e.g. pure CJK) would otherwise all
+# collapse to the same identifier, so fall back to a hash of the original name.
 safe_app_name() {
-  printf '%s' "$1" | sed 's/[^a-zA-Z0-9_-]//g' | tr '[:upper:]' '[:lower:]'
+  local cleaned
+  cleaned=$(printf '%s' "$1" | sed 's/[^a-zA-Z0-9_-]//g' | tr '[:upper:]' '[:lower:]')
+  if [[ -z "$cleaned" ]]; then
+    cleaned="app-$(printf '%s' "$1" | shasum -a 256 | cut -c1-10)"
+  fi
+  printf '%s' "$cleaned"
+}
+
+# Escape a value for embedding in XML character data (Info.plist).
+xml_escape() {
+  printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' \
+                         -e 's/"/\&quot;/g' -e "s/'/\&apos;/g"
+}
+
+# Emit a JSON string literal (including the surrounding quotes) for a value.
+json_string() {
+  python3 -c 'import json,sys; sys.stdout.write(json.dumps(sys.argv[1]))' "$1"
+}
+
+# Extract the host from a normalized http(s) URL.
+url_host() {
+  printf '%s' "$1" | sed -E 's|^https?://([^/:]+).*|\1|'
+}
+
+# Reduce a host to its registrable domain (best effort, good enough for cookies).
+registrable_domain() {
+  local host="$1"
+  local parts
+  parts=$(awk -F. '{print NF}' <<<"$host")
+  if (( parts <= 2 )); then
+    printf '%s' "$host"
+  else
+    awk -F. '{print $(NF-1)"."$NF}' <<<"$host"
+  fi
 }
 
 # Validate app name
@@ -158,6 +214,7 @@ prepare_icon() {
   local icon_arg="${2:-}"
   local iconset_dir="$3"
   local temp_dir="$4"
+  local app_name_for_icon="${5:-app}"
   local raw_icon="$temp_dir/raw_icon.png"
 
   mkdir -p "$iconset_dir"
@@ -234,15 +291,11 @@ prepare_icon() {
     sips -s format png "$downloaded_raw" --out "$raw_icon" >/dev/null 2>&1 || cp "$downloaded_raw" "$raw_icon"
   fi
 
-  # Fallback 3: Generate a clean fallback PNG if all fetches failed
+  # Fallback 3: Generate a visible placeholder if every fetch failed. The old
+  # fallback was a 1x1 transparent pixel, which upscaled to a blank Dock icon.
   if [[ ! -s "$raw_icon" ]]; then
-    log_warn "Could not fetch remote favicon. Generating clean fallback icon."
-    python3 -c "
-import zlib, struct
-raw = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xb8\xd2\xfe\x0f\x00\x02\x15\x01\x19\xa2\x8e\x9e\xa6\x00\x00\x00\x00IEND\xaeB\`\x82'
-with open('$raw_icon', 'wb') as f:
-    f.write(raw)
-"
+    log_warn "Could not fetch a site icon. Generating a placeholder icon instead."
+    python3 "$TOOLS_DIR/fallback_icon.py" "$app_name_for_icon" "$raw_icon" || true
   fi
 
   # Build complete macOS .iconset using sips
@@ -266,36 +319,73 @@ with open('$raw_icon', 'wb') as f:
   done
 }
 
+# Read a key from the JSON config. Values are passed as argv, never spliced
+# into the Python source, so a crafted key or path cannot execute code.
 get_config_val() {
   local key="$1"
   local default_val="$2"
-  if [[ -f "$CONFIG_FILE" ]]; then
-    python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('$key', '$default_val'))" 2>/dev/null || echo "$default_val"
-  else
-    echo "$default_val"
+  if [[ ! -f "$CONFIG_FILE" ]]; then
+    printf '%s\n' "$default_val"
+    return 0
   fi
+  python3 - "$CONFIG_FILE" "$key" "$default_val" <<'PY' 2>/dev/null || printf '%s\n' "$default_val"
+import json, sys
+path, key, default = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    with open(path) as fh:
+        data = json.load(fh)
+except Exception:
+    print(default)
+    sys.exit(0)
+value = data.get(key, default)
+if isinstance(value, bool):
+    value = "true" if value else "false"
+elif isinstance(value, list):
+    value = ",".join(str(v) for v in value)
+print(value)
+PY
 }
 
 set_config_val() {
   local key="$1"
   local val="$2"
   mkdir -p "$CONFIG_DIR"
-  python3 -c "
-import json, os
-p = '$CONFIG_FILE'
+  python3 - "$CONFIG_FILE" "$key" "$val" <<'PY'
+import json, os, sys
+path, key, raw = sys.argv[1], sys.argv[2], sys.argv[3]
 data = {}
-if os.path.exists(p):
-    try: data = json.load(open(p))
-    except: pass
-v = '$val'
+if os.path.exists(path):
+    try:
+        with open(path) as fh:
+            data = json.load(fh)
+    except Exception:
+        data = {}
+if key == "shared_cookie_domains":
+    value = [d.strip() for d in raw.split(",") if d.strip()]
+elif raw.lower() in ("true", "false"):
+    value = raw.lower() == "true"
+else:
+    try:
+        value = float(raw) if "." in raw else int(raw)
+    except ValueError:
+        value = raw
+data[key] = value
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+PY
+}
+
+# Read a key out of an app bundle's sgwebapp.json metadata.
+read_meta() {
+  local meta="$1" key="$2" default_val="${3:-}"
+  python3 - "$meta" "$key" "$default_val" <<'PY' 2>/dev/null || printf '%s\n' "$default_val"
+import json, sys
 try:
-    if '.' in v: v = float(v)
-    else: v = int(v)
-except:
-    pass
-data['$key'] = v
-json.dump(data, open(p, 'w'), indent=2)
-"
+    with open(sys.argv[1]) as fh:
+        print(json.load(fh).get(sys.argv[2], sys.argv[3]))
+except Exception:
+    print(sys.argv[3])
+PY
 }
 
 # Install subcommand
@@ -307,6 +397,9 @@ cmd_install() {
   def_padding=$(get_config_val "padding" "0.0")
   def_engine=$(get_config_val "engine" "native")
 
+  local def_share
+  def_share=$(get_config_val "share_login" "true")
+
   local app_name=""
   local app_url=""
   local custom_icon=""
@@ -315,19 +408,39 @@ cmd_install() {
   local border_width="$def_width"
   local border_radius="$def_radius"
   local content_padding="$def_padding"
+  local share_login="$def_share"
+  local force=0
+
+  # Options that take a value must not read past the end of the argument list;
+  # with `set -u` a bare `$2` would abort with an unbound-variable message.
+  need_value() {
+    if (( $# < 2 )); then
+      log_error "Option $1 requires a value."
+      exit 1
+    fi
+  }
 
   local pos_args=()
   while (( $# > 0 )); do
     case "$1" in
-      --engine) engine="$2"; shift 2 ;;
-      --border-color|--color) border_color="$2"; shift 2 ;;
-      --border-width|--width) border_width="$2"; shift 2 ;;
-      --border-radius|--radius) border_radius="$2"; shift 2 ;;
-      --padding) content_padding="$2"; shift 2 ;;
-      --icon) custom_icon="$2"; shift 2 ;;
+      --engine) need_value "$@"; engine="$2"; shift 2 ;;
+      --border-color|--color) need_value "$@"; border_color="$2"; shift 2 ;;
+      --border-width|--width) need_value "$@"; border_width="$2"; shift 2 ;;
+      --border-radius|--radius) need_value "$@"; border_radius="$2"; shift 2 ;;
+      --padding) need_value "$@"; content_padding="$2"; shift 2 ;;
+      --icon) need_value "$@"; custom_icon="$2"; shift 2 ;;
+      --no-share-login) share_login="false"; shift ;;
+      --share-login) share_login="true"; shift ;;
+      --force) force=1; shift ;;
+      --*) log_error "Unknown option: $1"; exit 1 ;;
       *) pos_args+=("$1"); shift ;;
     esac
   done
+
+  case "$engine" in
+    native|chrome) ;;
+    *) log_error "Unknown engine '$engine'. Use 'native' or 'chrome'."; exit 1 ;;
+  esac
 
   if (( ${#pos_args[@]} < 2 )); then
     if (( ${#pos_args[@]} == 1 )); then
@@ -351,16 +464,33 @@ cmd_install() {
   validate_name "$app_name"
   local url
   url=$(normalize_url "$app_url")
-  local browser_exec
-  browser_exec=$(find_chromium_browser)
+
+  # Only the Chrome engine needs a browser on disk. The native engine renders
+  # with WebKit and used to fail installation here for no reason.
+  local browser_exec=""
+  if [[ "$engine" == "chrome" ]]; then
+    browser_exec=$(find_chromium_browser)
+  fi
 
   local safe_id
   safe_id=$(safe_app_name "$app_name")
-  [[ -z "$safe_id" ]] && safe_id="app"
 
   local app_bundle="$APPS_DIR/$app_name.app"
   local macos_dir="$app_bundle/Contents/MacOS"
   local resources_dir="$app_bundle/Contents/Resources"
+
+  # Never silently overwrite an application we did not create.
+  if [[ -d "$app_bundle" ]]; then
+    if [[ ! -f "$app_bundle/Contents/Resources/sgwebapp.json" ]]; then
+      log_error "$app_bundle already exists and was not created by sgwebapp."
+      log_error "Refusing to overwrite it. Choose a different name."
+      exit 1
+    fi
+    if (( force == 0 )); then
+      log_warn "Web app '$app_name' already exists; reinstalling it."
+      log_warn "Its saved logins are kept. Pass --force to skip this notice."
+    fi
+  fi
 
   log_info "Installing Web App: ${BOLD}$app_name${RESET} -> $url [engine: $engine]"
   mkdir -p "$APPS_DIR" "$macos_dir" "$resources_dir"
@@ -371,7 +501,7 @@ cmd_install() {
   CLEANUP_DIRS+=("$temp_dir")
   local iconset_dir="$temp_dir/AppIcon.iconset"
 
-  prepare_icon "$url" "$custom_icon" "$iconset_dir" "$temp_dir"
+  prepare_icon "$url" "$custom_icon" "$iconset_dir" "$temp_dir" "$app_name"
 
   local icns_dest="$resources_dir/AppIcon.icns"
   iconutil -c icns "$iconset_dir" -o "$icns_dest" 2>/dev/null || true
@@ -381,8 +511,13 @@ cmd_install() {
   if [[ "$engine" == "native" ]]; then
     # Ensure native runtime is compiled
     if [[ ! -x "$RUNTIME_BIN" ]]; then
+      if [[ -z "$SRC_DIR" ]]; then
+        log_error "sgwebapp-runtime is missing and its source could not be found."
+        log_error "Run 'make build' in the sgwebapp checkout, or reinstall."
+        exit 1
+      fi
       log_info "Compiling native borderless runtime..."
-      swiftc -O "$SCRIPT_DIR/../src/runtime/main.swift" -o "$RUNTIME_BIN"
+      swiftc -O "$SRC_DIR/runtime/main.swift" -o "$RUNTIME_BIN"
     fi
     cp "$RUNTIME_BIN" "$macos_dir/$app_name"
     chmod +x "$macos_dir/$app_name"
@@ -398,6 +533,17 @@ EOF
     chmod +x "$launcher_file"
   fi
 
+  # Values below land inside XML, so they must be escaped: an app name or URL
+  # containing & or < would otherwise produce an Info.plist macOS cannot parse.
+  local esc_name esc_url esc_exec esc_color
+  esc_name=$(xml_escape "$app_name")
+  esc_url=$(xml_escape "$url")
+  esc_exec=$(xml_escape "$exec_name")
+  esc_color=$(xml_escape "$border_color")
+
+  local share_login_xml="<false/>"
+  [[ "$share_login" == "true" ]] && share_login_xml="<true/>"
+
   # Create Info.plist
   cat > "$app_bundle/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -405,25 +551,31 @@ EOF
 <plist version="1.0">
 <dict>
   <key>CFBundleExecutable</key>
-  <string>${exec_name}</string>
+  <string>${esc_exec}</string>
   <key>CFBundleIconFile</key>
   <string>AppIcon</string>
   <key>CFBundleIdentifier</key>
   <string>com.sgwebapp.app.${safe_id}</string>
   <key>CFBundleName</key>
-  <string>${app_name}</string>
+  <string>${esc_name}</string>
+  <key>CFBundleDisplayName</key>
+  <string>${esc_name}</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.0</string>
+  <string>${VERSION}</string>
+  <key>CFBundleVersion</key>
+  <string>${VERSION}</string>
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>LSMinimumSystemVersion</key>
   <string>11.0</string>
   <key>SGWebAppURL</key>
-  <string>${url}</string>
+  <string>${esc_url}</string>
+  <key>SGWebAppShareLogin</key>
+  ${share_login_xml}
   <key>SGWebAppBorderColor</key>
-  <string>${border_color}</string>
+  <string>${esc_color}</string>
   <key>SGWebAppBorderWidth</key>
   <real>${border_width}</real>
   <key>SGWebAppCornerRadius</key>
@@ -437,16 +589,21 @@ EOF
   # Save sgwebapp metadata
   local created_date
   created_date=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  # Written through json_string so names, URLs and paths containing quotes or
+  # backslashes cannot produce a malformed metadata file.
+  local browser_json="null"
+  [[ -n "$browser_exec" ]] && browser_json=$(json_string "$browser_exec")
   cat > "$resources_dir/sgwebapp.json" <<EOF
 {
-  "name": "$app_name",
-  "url": "$url",
-  "engine": "$engine",
-  "browser": "$browser_exec",
-  "border_color": "$border_color",
+  "name": $(json_string "$app_name"),
+  "url": $(json_string "$url"),
+  "engine": $(json_string "$engine"),
+  "browser": $browser_json,
+  "border_color": $(json_string "$border_color"),
   "border_width": $border_width,
   "border_radius": $border_radius,
   "padding": $content_padding,
+  "share_login": $share_login,
   "bundle_id": "com.sgwebapp.app.${safe_id}",
   "created_at": "$created_date"
 }
@@ -462,14 +619,14 @@ EOF
   echo -e "  • ${BOLD}Launch with CLI:${RESET}       sgwebapp launch \"$app_name\""
   if [[ "$engine" == "chrome" ]]; then
     echo -e "  • ${BOLD}Add Window Border:${RESET}     sgwebapp border start"
+  else
+    echo -e "  • ${BOLD}Reuse Chrome login:${RESET}    sgwebapp import-cookies \"$app_name\""
   fi
   echo ""
 }
 
 # List subcommand
 cmd_list() {
-  local found=0
-  local format="${1:-}"
 
   if [[ ! -d "$APPS_DIR" ]]; then
     echo "No Web Apps installed in $APPS_DIR"
@@ -488,17 +645,16 @@ cmd_list() {
     return 0
   fi
 
-  printf "%-22s %-10s %-42s %s\n" "APP NAME" "ENGINE" "URL" "PATH" 2>/dev/null || true
-  printf "%-22s %-10s %-42s %s\n" "--------" "------" "---" "----" 2>/dev/null || true
+  printf "%-22s %-10s %-42s %s\n" "APP NAME" "ENGINE" "URL" "PATH"
+  printf "%-22s %-10s %-42s %s\n" "--------" "------" "---" "----"
 
   for app_path in "${apps[@]}"; do
     local meta="$app_path/Contents/Resources/sgwebapp.json"
     local name url engine
-    name=$(python3 -c "import json; print(json.load(open('$meta')).get('name',''))" 2>/dev/null || basename "$app_path" .app)
-    url=$(python3 -c "import json; print(json.load(open('$meta')).get('url',''))" 2>/dev/null || echo "unknown")
-    engine=$(python3 -c "import json; print(json.load(open('$meta')).get('engine','chrome'))" 2>/dev/null || echo "chrome")
-    printf "%-22s %-10s %-42s %s\n" "$name" "$engine" "$url" "$app_path" 2>/dev/null || true
-    found=1
+    name=$(read_meta "$meta" name "$(basename "$app_path" .app)")
+    url=$(read_meta "$meta" url "unknown")
+    engine=$(read_meta "$meta" engine "chrome")
+    printf "%-22s %-10s %-42s %s\n" "$name" "$engine" "$url" "$app_path"
   done
 }
 
@@ -560,9 +716,17 @@ cmd_remove() {
     local app_name="$1"
   fi
 
+  # This path feeds `rm -rf`, so the name must be validated exactly like it is
+  # on install: "../../foo" would otherwise escape ~/Applications entirely.
+  validate_name "$app_name"
+
   local app_path="$APPS_DIR/$app_name.app"
   if [[ ! -d "$app_path" ]]; then
     log_error "Web App '$app_name' not found at $app_path"
+    exit 1
+  fi
+  if [[ ! -f "$app_path/Contents/Resources/sgwebapp.json" ]]; then
+    log_error "$app_path was not created by sgwebapp; refusing to delete it."
     exit 1
   fi
 
@@ -582,8 +746,13 @@ cmd_border() {
 
   # Ensure border daemon binary is compiled
   if [[ ! -x "$BORDER_BIN" ]]; then
+    if [[ -z "$SRC_DIR" ]]; then
+      log_error "sgwebapp-border is missing and its source could not be found."
+      log_error "Run 'make build' in the sgwebapp checkout, or reinstall."
+      exit 1
+    fi
     log_info "Compiling native Swift border daemon..."
-    swiftc -O "$SCRIPT_DIR/../src/border/main.swift" -o "$BORDER_BIN"
+    swiftc -O "$SRC_DIR/border/main.swift" -o "$BORDER_BIN"
   fi
 
   case "$action" in
@@ -647,6 +816,141 @@ cmd_border() {
   esac
 }
 
+# Resolve an installed app bundle by name, or exit with a helpful message.
+resolve_app() {
+  local name="$1"
+  validate_name "$name"
+  local path="$APPS_DIR/$name.app"
+  if [[ ! -f "$path/Contents/Resources/sgwebapp.json" ]]; then
+    log_error "No sgwebapp web app named '$name'. Run 'sgwebapp list'."
+    exit 1
+  fi
+  printf '%s' "$path"
+}
+
+# Seed one web app's login from a Chromium profile.
+cmd_import_cookies() {
+  if (( $# == 0 )); then
+    log_error "Usage: sgwebapp import-cookies <name> [--browser chrome|brave|edge|chromium] [--profile Default] [--domain example.com]"
+    exit 1
+  fi
+
+  local app_name="$1"; shift
+  local browser="chrome"
+  local profile="Default"
+  local domains=()
+
+  while (( $# > 0 )); do
+    case "$1" in
+      --browser) [[ $# -ge 2 ]] || { log_error "--browser requires a value"; exit 1; }; browser="$2"; shift 2 ;;
+      --profile) [[ $# -ge 2 ]] || { log_error "--profile requires a value"; exit 1; }; profile="$2"; shift 2 ;;
+      --domain)  [[ $# -ge 2 ]] || { log_error "--domain requires a value"; exit 1; }; domains+=("$2"); shift 2 ;;
+      *) log_error "Unknown option: $1"; exit 1 ;;
+    esac
+  done
+
+  local app_path meta url engine bundle_id
+  app_path=$(resolve_app "$app_name")
+  meta="$app_path/Contents/Resources/sgwebapp.json"
+  url=$(read_meta "$meta" url "")
+  engine=$(read_meta "$meta" engine "native")
+  bundle_id=$(read_meta "$meta" bundle_id "")
+
+  if [[ "$engine" == "chrome" ]]; then
+    log_warn "'$app_name' uses the Chrome engine and already shares Chrome's live session."
+    log_warn "Importing cookies is only useful for native-engine apps."
+    return 0
+  fi
+  if [[ -z "$bundle_id" ]]; then
+    log_error "Metadata for '$app_name' has no bundle_id; reinstall the app."
+    exit 1
+  fi
+
+  # Default to the app's own registrable domain, so an import never hoovers up
+  # credentials for unrelated sites.
+  if (( ${#domains[@]} == 0 )); then
+    local host
+    host=$(url_host "$url")
+    domains+=("$(registrable_domain "$host")")
+  fi
+
+  local domain_args=()
+  local d
+  for d in "${domains[@]}"; do
+    domain_args+=(--domain "$d")
+  done
+
+  log_info "Reading $browser cookies for: ${domains[*]}"
+  log_warn "macOS will ask for keychain access to '$browser Safe Storage'. Choose Allow."
+
+  mkdir -p "$PENDING_DIR"
+  chmod 700 "$PENDING_DIR"
+  local out="$PENDING_DIR/$bundle_id.json"
+
+  if python3 "$TOOLS_DIR/chrome_cookies.py" \
+       --browser "$browser" --profile "$profile" "${domain_args[@]}" --out "$out"; then
+    log_success "Cookies staged for '$app_name'."
+    echo "    They are injected the next time the app starts, then the staging file is deleted."
+    echo "    Staged at: $out"
+  else
+    log_error "Cookie import failed. '$app_name' will keep using its own login."
+    exit 1
+  fi
+}
+
+# Inspect or wipe the shared login jar.
+cmd_cookies() {
+  local action="${1:-status}"
+
+  case "$action" in
+    status)
+      echo -e "${BOLD}sgwebapp login cookie jar${RESET}"
+      if [[ -f "$COOKIE_JAR" ]]; then
+        local count perms
+        count=$(python3 - "$COOKIE_JAR" <<'PY' 2>/dev/null || echo "?"
+import json, sys
+try:
+    with open(sys.argv[1]) as fh:
+        print(len(json.load(fh).get("cookies", [])))
+except Exception:
+    print("?")
+PY
+)
+        perms=$(stat -f "%Sp" "$COOKIE_JAR")
+        echo "  • file:    $COOKIE_JAR"
+        echo "  • cookies: $count"
+        echo "  • mode:    $perms (must be -rw-------)"
+      else
+        echo "  • file:    $COOKIE_JAR (does not exist yet)"
+      fi
+      local pending_count=0
+      if [[ -d "$PENDING_DIR" ]]; then
+        pending_count=$(find "$PENDING_DIR" -maxdepth 1 -name "*.json" | wc -l | tr -d ' ')
+      fi
+      echo "  • staged imports awaiting first launch: $pending_count"
+      echo ""
+      local shared
+      shared=$(get_config_val shared_cookie_domains "")
+      if [[ -z "$shared" ]]; then
+        shared="built-in default (Google, GitHub, Microsoft, Apple, Okta, Auth0, Slack, Atlassian)"
+      fi
+      echo "  Shared domains: $shared"
+      echo "  Change them with: sgwebapp config set shared_cookie_domains \"google.com,github.com\""
+      echo "  Disable syncing entirely with: sgwebapp config set share_login false"
+      ;;
+    clear)
+      rm -f "$COOKIE_JAR"
+      rm -rf "$PENDING_DIR"
+      log_success "Cleared the shared cookie jar and any staged imports."
+      echo "  Logins already stored inside each app are untouched."
+      ;;
+    *)
+      log_error "Unknown cookies action: $action. Use 'status' or 'clear'."
+      exit 1
+      ;;
+  esac
+}
+
 # Config subcommand
 cmd_config() {
   local action="${1:-get}"
@@ -657,17 +961,19 @@ cmd_config() {
   case "$action" in
     get|list|"")
       echo -e "${BOLD}Current sgwebapp Configuration (Defaults to macOS Tahoe style):${RESET}"
-      local cur_color cur_width cur_radius cur_padding cur_engine
+      local cur_color cur_width cur_radius cur_padding cur_engine cur_share
       cur_color=$(get_config_val "border_color" "tahoe")
       cur_width=$(get_config_val "border_width" "1.2")
       cur_radius=$(get_config_val "border_radius" "18.0")
       cur_padding=$(get_config_val "padding" "0.0")
       cur_engine=$(get_config_val "engine" "native")
+      cur_share=$(get_config_val "share_login" "true")
       echo "  • border_color:  $cur_color (options: tahoe, auto, 89b4fa, or hex)"
       echo "  • border_width:  $cur_width pt"
       echo "  • border_radius: $cur_radius pt (Tahoe signature squircle)"
       echo "  • padding:       $cur_padding pt (Content inset margin)"
       echo "  • engine:        $cur_engine (options: native, chrome)"
+      echo "  • share_login:   $cur_share (sync SSO cookies between sgwebapp apps)"
       echo ""
       echo "Config file: $CONFIG_FILE"
       echo "Change settings with: sgwebapp config set <key> <value>"
@@ -675,10 +981,18 @@ cmd_config() {
     set)
       if (( $# < 2 )); then
         log_error "Usage: sgwebapp config set <key> <value>"
-        echo "Valid keys: border_color, border_width, border_radius, padding, engine"
+        echo "Valid keys: border_color, border_width, border_radius, padding, engine, share_login, shared_cookie_domains"
         exit 1
       fi
       local k="$1" v="$2"
+      case "$k" in
+        border_color|border_width|border_radius|padding|engine|share_login|shared_cookie_domains) ;;
+        *)
+          log_error "Unknown config key: $k"
+          echo "Valid keys: border_color, border_width, border_radius, padding, engine, share_login, shared_cookie_domains"
+          exit 1
+          ;;
+      esac
       set_config_val "$k" "$v"
       log_success "Updated $k = $v in $CONFIG_FILE"
       ;;
@@ -689,7 +1003,8 @@ cmd_config() {
   "border_width": 1.2,
   "border_radius": 18.0,
   "padding": 0.0,
-  "engine": "native"
+  "engine": "native",
+  "share_login": true
 }
 EOF
       log_success "Reset configuration to macOS Tahoe defaults (18pt radius, 1.2pt glass border, 0.0pt padding)."
@@ -728,6 +1043,8 @@ main() {
     remove) cmd_remove "$@" ;;
     config) cmd_config "$@" ;;
     border) cmd_border "$@" ;;
+    import-cookies) cmd_import_cookies "$@" ;;
+    cookies) cmd_cookies "$@" ;;
     version | -v | --version) echo "sgwebapp version $VERSION" ;;
     help | -h | --help) print_help ;;
     *)
