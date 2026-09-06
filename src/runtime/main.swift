@@ -214,6 +214,7 @@ var sharedDomains: [String] = {
 
 var windowWidth: CGFloat = 1200
 var windowHeight: CGFloat = 800
+var explicitWindowSize = false
 
 var args = CommandLine.arguments.dropFirst()
 while let arg = args.first {
@@ -232,9 +233,9 @@ while let arg = args.first {
     case "--padding":
         if let val = args.first, let p = Double(val) { contentPadding = CGFloat(p); args = args.dropFirst() }
     case "--win-width":
-        if let val = args.first, let w = Double(val) { windowWidth = CGFloat(w); args = args.dropFirst() }
+        if let val = args.first, let w = Double(val) { windowWidth = CGFloat(w); explicitWindowSize = true; args = args.dropFirst() }
     case "--win-height":
-        if let val = args.first, let h = Double(val) { windowHeight = CGFloat(h); args = args.dropFirst() }
+        if let val = args.first, let h = Double(val) { windowHeight = CGFloat(h); explicitWindowSize = true; args = args.dropFirst() }
     case "--no-share-login":
         shareLogin = false
     default:
@@ -606,7 +607,7 @@ final class WebPolicyDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
 
 // MARK: - App delegate
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var window: FramelessWindow!
     var webView: WKWebView!
     var borderView: BorderView!
@@ -614,17 +615,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var dataStore: WKWebsiteDataStore = .default()
     var exportTimer: Timer?
     var pendingExport: DispatchWorkItem?
+    var autosaveName: NSWindow.FrameAutosaveName = "SGWebAppWindow"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMainMenu()
 
+        let cleanName = (Bundle.main.bundleIdentifier ?? appTitle).unicodeScalars
+            .filter { CharacterSet.alphanumerics.contains($0) }
+            .map(String.init).joined()
+        autosaveName = "SGWebAppWindow_" + (cleanName.isEmpty ? "default" : cleanName)
+
         let screenRect = NSScreen.main?.visibleFrame ?? NSRect(x: 100, y: 100, width: windowWidth, height: windowHeight)
-        let x = screenRect.origin.x + (screenRect.width - windowWidth) / 2
-        let y = screenRect.origin.y + (screenRect.height - windowHeight) / 2
-        let frame = NSRect(x: x, y: y, width: windowWidth, height: windowHeight)
+        let x = screenRect.origin.x + max(0, (screenRect.width - windowWidth) / 2)
+        let y = screenRect.origin.y + max(0, (screenRect.height - windowHeight) / 2)
+        let defaultFrame = NSRect(x: x, y: y, width: windowWidth, height: windowHeight)
 
         window = FramelessWindow(
-            contentRect: frame,
+            contentRect: defaultFrame,
             styleMask: [.borderless, .resizable],
             backing: .buffered,
             defer: false
@@ -635,8 +642,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.isMovableByWindowBackground = true
         window.minSize = NSSize(width: 400, height: 300)
         window.title = appTitle
+        window.delegate = self
 
-        borderView = BorderView(frame: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight))
+        if !explicitWindowSize {
+            _ = window.setFrameAutosaveName(autosaveName)
+            // Ensure restored window is visible on at least one currently active screen
+            let isOnScreen = NSScreen.screens.contains { $0.visibleFrame.intersects(window.frame) }
+            if !isOnScreen {
+                let curSize = window.frame.size
+                let sRect = NSScreen.main?.visibleFrame ?? NSRect(x: 100, y: 100, width: curSize.width, height: curSize.height)
+                let w = min(curSize.width, sRect.width)
+                let h = min(curSize.height, sRect.height)
+                let nx = sRect.origin.x + max(0, (sRect.width - w) / 2)
+                let ny = sRect.origin.y + max(0, (sRect.height - h) / 2)
+                window.setFrame(NSRect(x: nx, y: ny, width: w, height: h), display: true)
+            }
+        }
+
+        borderView = BorderView(frame: NSRect(x: 0, y: 0, width: window.frame.width, height: window.frame.height))
         borderView.autoresizingMask = [.width, .height]
 
         let config = WKWebViewConfiguration()
@@ -841,11 +864,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func zoomOut() { webView.pageZoom = max(0.2, webView.pageZoom - 0.1) }
     @objc func zoomReset() { webView.pageZoom = 1.0 }
 
+    // MARK: - Window delegate (Frame Autosave)
+
+    func windowDidMove(_ notification: Notification) {
+        if !explicitWindowSize && window != nil {
+            window.saveFrame(usingName: autosaveName)
+        }
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        if !explicitWindowSize && window != nil {
+            window.saveFrame(usingName: autosaveName)
+        }
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        if !explicitWindowSize && window != nil {
+            window.saveFrame(usingName: autosaveName)
+        }
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return true
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if !explicitWindowSize && window != nil {
+            window.saveFrame(usingName: autosaveName)
+        }
         guard shareLogin else { return .terminateNow }
         var replied = false
         let replyOnce = {
