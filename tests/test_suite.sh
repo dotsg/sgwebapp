@@ -216,8 +216,8 @@ fi
 
 "$BIN" config reset >/dev/null
 cfg_out=$("$BIN" config)
-if grep -q "0.0 pt" <<<"$cfg_out"; then
-  pass "sgwebapp config reset restored default 0.0pt padding"
+if grep -q "8.0 pt" <<<"$cfg_out"; then
+  pass "sgwebapp config reset restored default 8.0pt padding"
 else
   fail "sgwebapp config reset failed"
 fi

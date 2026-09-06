@@ -175,20 +175,26 @@ var borderColorHex = Bundle.main.object(forInfoDictionaryKey: "SGWebAppBorderCol
 
 var borderWidth: CGFloat = {
     if let w = Bundle.main.object(forInfoDictionaryKey: "SGWebAppBorderWidth") as? Double { return CGFloat(w) }
+    if let n = Bundle.main.object(forInfoDictionaryKey: "SGWebAppBorderWidth") as? NSNumber { return CGFloat(n.doubleValue) }
     if let w = globalConfig["border_width"] as? Double { return CGFloat(w) }
+    if let n = globalConfig["border_width"] as? NSNumber { return CGFloat(n.doubleValue) }
     return 1.2
 }()
 
 var cornerRadius: CGFloat = {
     if let r = Bundle.main.object(forInfoDictionaryKey: "SGWebAppCornerRadius") as? Double { return CGFloat(r) }
+    if let n = Bundle.main.object(forInfoDictionaryKey: "SGWebAppCornerRadius") as? NSNumber { return CGFloat(n.doubleValue) }
     if let r = globalConfig["border_radius"] as? Double { return CGFloat(r) }
-    return 10.0
+    if let n = globalConfig["border_radius"] as? NSNumber { return CGFloat(n.doubleValue) }
+    return 18.0
 }()
 
 var contentPadding: CGFloat = {
     if let p = Bundle.main.object(forInfoDictionaryKey: "SGWebAppPadding") as? Double { return CGFloat(p) }
+    if let n = Bundle.main.object(forInfoDictionaryKey: "SGWebAppPadding") as? NSNumber { return CGFloat(n.doubleValue) }
     if let p = globalConfig["padding"] as? Double { return CGFloat(p) }
-    return 0.0
+    if let n = globalConfig["padding"] as? NSNumber { return CGFloat(n.doubleValue) }
+    return 8.0
 }()
 
 var shareLogin: Bool = {
@@ -255,8 +261,8 @@ class BorderView: NSView {
     let visualEffectView = NSVisualEffectView()
     weak var webView: WKWebView?
     var currentBorderWidth: CGFloat = 1.2
-    var currentCornerRadius: CGFloat = 10.0
-    var currentPadding: CGFloat = 0.0
+    var currentCornerRadius: CGFloat = 18.0
+    var currentPadding: CGFloat = 8.0
     var colorSpec: String = "tahoe"
 
     override init(frame frameRect: NSRect) {
