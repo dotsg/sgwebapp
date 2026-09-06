@@ -82,6 +82,7 @@ class TopDraggableView: NSView {
 
 class BorderView: NSView {
     let shapeLayer = CAShapeLayer()
+    let maskLayer = CAShapeLayer()
     var currentBorderWidth: CGFloat = 2.5
     var currentCornerRadius: CGFloat = 10.0
     var currentBorderColor: CGColor = NSColor.blue.cgColor
@@ -89,8 +90,9 @@ class BorderView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.addSublayer(shapeLayer)
         shapeLayer.fillColor = nil
+        shapeLayer.zPosition = 999 // Ensure border is always on top of web content
+        layer?.addSublayer(shapeLayer)
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -100,12 +102,22 @@ class BorderView: NSView {
         currentCornerRadius = radius
         currentBorderColor = color
 
-        let inset = width / 2.0
-        let rect = bounds.insetBy(dx: inset, dy: inset)
-        let path = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
-
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+
+        // 1. Hard-mask the entire container view so all subviews (including WKWebView) have rounded corners
+        maskLayer.frame = bounds
+        maskLayer.path = CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        layer?.mask = maskLayer
+        layer?.cornerRadius = radius
+        layer?.masksToBounds = true
+
+        // 2. Draw high-precision border stroke on top
+        let inset = width / 2.0
+        let rect = bounds.insetBy(dx: inset, dy: inset)
+        let strokeRadius = max(0, radius - inset)
+        let path = CGPath(roundedRect: rect, cornerWidth: strokeRadius, cornerHeight: strokeRadius, transform: nil)
+
         shapeLayer.frame = bounds
         shapeLayer.path = path
         shapeLayer.lineWidth = width
@@ -148,9 +160,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDe
         // Outer container with rounded corners and border
         borderView = BorderView(frame: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight))
         borderView.autoresizingMask = [.width, .height]
-        borderView.wantsLayer = true
-        borderView.layer?.cornerRadius = cornerRadius
-        borderView.layer?.masksToBounds = true
         borderView.updateBorder(width: borderWidth, radius: cornerRadius, color: borderColor.cgColor)
 
         // WebKit Configuration
@@ -162,6 +171,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDe
         let webFrame = borderView.bounds.insetBy(dx: webInset, dy: webInset)
         webView = WKWebView(frame: webFrame, configuration: config)
         webView.autoresizingMask = [.width, .height]
+        webView.wantsLayer = true
+        webView.layer?.cornerRadius = max(0, cornerRadius - borderWidth)
+        webView.layer?.masksToBounds = true
+        webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = self
         webView.uiDelegate = self
 
