@@ -50,9 +50,12 @@ func resolveBorderColor(_ colorSpec: String, appearance: NSAppearance?) -> CGCol
     if clean == "tahoe" || clean == "auto" || clean == "system" {
         let isDark = appearance?.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         if isDark {
-            return NSColor(white: 1.0, alpha: 0.22).cgColor
+            return NSColor(white: 1.0, alpha: 0.18).cgColor
         } else {
-            return NSColor(white: 0.0, alpha: 0.18).cgColor
+            // In Light Mode, native macOS windows rely purely on the WindowServer drop shadow
+            // for window delineation. Drawing an artificial inner CALayer stroke creates a muddy
+            // double border (especially on non-Retina displays).
+            return NSColor.clear.cgColor
         }
     }
     return parseHexColor(clean).cgColor
@@ -314,6 +317,7 @@ class BorderView: NSView {
         borderOverlay.cornerRadius = radius
         borderOverlay.borderWidth = width
         borderOverlay.borderColor = resolvedColor
+        borderOverlay.isHidden = (resolvedColor.alpha == 0)
 
         let totalInset = padding > 0 ? padding : width
         if let wv = webView {

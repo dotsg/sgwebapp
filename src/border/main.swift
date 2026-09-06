@@ -44,9 +44,9 @@ func resolveBorderColor(_ colorSpec: String, appearance: NSAppearance?) -> CGCol
     if clean == "tahoe" || clean == "auto" || clean == "system" {
         let isDark = appearance?.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         if isDark {
-            return NSColor(white: 1.0, alpha: 0.22).cgColor
+            return NSColor(white: 1.0, alpha: 0.18).cgColor
         } else {
-            return NSColor(white: 0.0, alpha: 0.18).cgColor
+            return NSColor.clear.cgColor
         }
     }
     return parseHexColor(clean).cgColor
@@ -135,6 +135,7 @@ class BorderView: NSView {
         shapeLayer.path = path
         shapeLayer.lineWidth = width
         shapeLayer.strokeColor = color
+        shapeLayer.isHidden = (color.alpha == 0)
         CATransaction.commit()
     }
 

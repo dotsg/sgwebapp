@@ -99,7 +99,7 @@ sgwebapp remove
 `sgwebapp` defaults to native macOS window aesthetics (matching Finder and system apps 100%):
 - **macOS Finder squircle corners**: `26.0 pt` outer corner radius (continuous G2 curvature).
 - **Ultra-fine glass stroke**: `0.5 pt` hairline border width (exact 1 physical pixel on Retina display).
-- **Dynamic appearance**: Border color `"tahoe"` automatically shifts between a luminous translucent white outline (`alpha 0.22`) in Dark Mode and a refined subtle dark outline (`alpha 0.18`) in Light Mode.
+- **Dynamic appearance**: Border color `"tahoe"` automatically adapts to system appearance: in Light Mode, the window boundary seamlessly blends with the native macOS WindowServer compositor drop shadow for an authentic, 100% Finder-identical edge (eliminating double/heavy strokes on non-Retina and Retina displays alike); in Dark Mode, it renders a subtle translucent luminous outline (`alpha 0.18`) ensuring clean separation from dark wallpapers.
 - **Native content inset padding**: `8.0 pt` content inset padding revealing the frosted backdrop blur around the web application, identical to Finder's sidebar margin.
 
 ### View & Update Global Defaults
