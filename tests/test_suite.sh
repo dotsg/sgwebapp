@@ -94,7 +94,31 @@ else
   fail "sgwebapp border stop failed"
 fi
 
-# 6. Test Removal
+# 6. Test Configuration (get, set, reset including padding)
+cfg_out=$("$BIN" config)
+if grep -q "padding:" <<<"$cfg_out"; then
+  pass "sgwebapp config outputs padding setting"
+else
+  fail "sgwebapp config missing padding output"
+fi
+
+"$BIN" config set padding 10.0 >/dev/null
+cfg_out=$("$BIN" config)
+if grep -q "10.0 pt" <<<"$cfg_out"; then
+  pass "sgwebapp config set padding successfully updated configuration"
+else
+  fail "sgwebapp config set padding failed"
+fi
+
+"$BIN" config reset >/dev/null
+cfg_out=$("$BIN" config)
+if grep -q "0.0 pt" <<<"$cfg_out"; then
+  pass "sgwebapp config reset restored default 0.0pt padding"
+else
+  fail "sgwebapp config reset failed"
+fi
+
+# 7. Test Removal
 if "$BIN" remove "$TEST_APP_NAME" >/dev/null; then
   pass "sgwebapp remove command succeeded"
 else

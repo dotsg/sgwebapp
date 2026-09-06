@@ -57,9 +57,19 @@ ${BOLD}COMMANDS:${RESET}
   version                       Show version information
   help                          Show this help message
 
+${BOLD}OPTIONS (install):${RESET}
+  --engine <native|chrome>      Renderer engine (native: 0-bar + border; chrome: uses Chrome session)
+  --border-color <color>        Border color: tahoe (default), auto, or hex (e.g. 89b4fa)
+  --border-width <width>        Border stroke width in pt (default: 1.2)
+  --border-radius <radius>      Corner radius in pt (default: 18.0)
+  --padding <pt>                Content padding inside the border in pt (default: 0.0)
+  --icon <path|url>             Custom application icon
+
 ${BOLD}EXAMPLES:${RESET}
   sgwebapp install "Solaree" "https://solaree.ai/index_cn.html"
+  sgwebapp install "Solaree" "https://solaree.ai/index_cn.html" --padding 10
   sgwebapp install "Google Maps" "https://www.google.com/maps"
+  sgwebapp config set padding 10.0
   sgwebapp config set border_color 89b4fa
   sgwebapp config set border_radius 18.0
   sgwebapp config reset
@@ -290,10 +300,11 @@ json.dump(data, open(p, 'w'), indent=2)
 
 # Install subcommand
 cmd_install() {
-  local def_color def_width def_radius def_engine
+  local def_color def_width def_radius def_padding def_engine
   def_color=$(get_config_val "border_color" "tahoe")
   def_width=$(get_config_val "border_width" "1.2")
   def_radius=$(get_config_val "border_radius" "18.0")
+  def_padding=$(get_config_val "padding" "0.0")
   def_engine=$(get_config_val "engine" "native")
 
   local app_name=""
@@ -303,6 +314,7 @@ cmd_install() {
   local border_color="$def_color"
   local border_width="$def_width"
   local border_radius="$def_radius"
+  local content_padding="$def_padding"
 
   local pos_args=()
   while (( $# > 0 )); do
@@ -311,6 +323,7 @@ cmd_install() {
       --border-color|--color) border_color="$2"; shift 2 ;;
       --border-width|--width) border_width="$2"; shift 2 ;;
       --border-radius|--radius) border_radius="$2"; shift 2 ;;
+      --padding) content_padding="$2"; shift 2 ;;
       --icon) custom_icon="$2"; shift 2 ;;
       *) pos_args+=("$1"); shift ;;
     esac
@@ -415,6 +428,8 @@ EOF
   <real>${border_width}</real>
   <key>SGWebAppCornerRadius</key>
   <real>${border_radius}</real>
+  <key>SGWebAppPadding</key>
+  <real>${content_padding}</real>
 </dict>
 </plist>
 EOF
@@ -429,6 +444,9 @@ EOF
   "engine": "$engine",
   "browser": "$browser_exec",
   "border_color": "$border_color",
+  "border_width": $border_width,
+  "border_radius": $border_radius,
+  "padding": $content_padding,
   "bundle_id": "com.sgwebapp.app.${safe_id}",
   "created_at": "$created_date"
 }
@@ -639,14 +657,16 @@ cmd_config() {
   case "$action" in
     get|list|"")
       echo -e "${BOLD}Current sgwebapp Configuration (Defaults to macOS Tahoe style):${RESET}"
-      local cur_color cur_width cur_radius cur_engine
+      local cur_color cur_width cur_radius cur_padding cur_engine
       cur_color=$(get_config_val "border_color" "tahoe")
       cur_width=$(get_config_val "border_width" "1.2")
       cur_radius=$(get_config_val "border_radius" "18.0")
+      cur_padding=$(get_config_val "padding" "0.0")
       cur_engine=$(get_config_val "engine" "native")
       echo "  • border_color:  $cur_color (options: tahoe, auto, 89b4fa, or hex)"
       echo "  • border_width:  $cur_width pt"
       echo "  • border_radius: $cur_radius pt (Tahoe signature squircle)"
+      echo "  • padding:       $cur_padding pt (Content inset margin)"
       echo "  • engine:        $cur_engine (options: native, chrome)"
       echo ""
       echo "Config file: $CONFIG_FILE"
@@ -655,7 +675,7 @@ cmd_config() {
     set)
       if (( $# < 2 )); then
         log_error "Usage: sgwebapp config set <key> <value>"
-        echo "Valid keys: border_color, border_width, border_radius, engine"
+        echo "Valid keys: border_color, border_width, border_radius, padding, engine"
         exit 1
       fi
       local k="$1" v="$2"
@@ -668,10 +688,11 @@ cmd_config() {
   "border_color": "tahoe",
   "border_width": 1.2,
   "border_radius": 18.0,
+  "padding": 0.0,
   "engine": "native"
 }
 EOF
-      log_success "Reset configuration to macOS Tahoe defaults (18pt radius, 1.2pt glass border)."
+      log_success "Reset configuration to macOS Tahoe defaults (18pt radius, 1.2pt glass border, 0.0pt padding)."
       ;;
     *)
       log_error "Unknown config action: $action. Use 'sgwebapp config' or 'sgwebapp config set <key> <value>'."

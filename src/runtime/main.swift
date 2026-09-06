@@ -75,6 +75,12 @@ var cornerRadius: CGFloat = {
     return 18.0
 }()
 
+var contentPadding: CGFloat = {
+    if let p = Bundle.main.object(forInfoDictionaryKey: "SGWebAppPadding") as? Double { return CGFloat(p) }
+    if let p = globalConfig["padding"] as? Double { return CGFloat(p) }
+    return 0.0
+}()
+
 var windowWidth: CGFloat = 1200
 var windowHeight: CGFloat = 800
 
@@ -92,6 +98,8 @@ while let arg = args.first {
         if let val = args.first, let w = Double(val) { borderWidth = CGFloat(w); args = args.dropFirst() }
     case "--border-radius", "--radius":
         if let val = args.first, let r = Double(val) { cornerRadius = CGFloat(r); args = args.dropFirst() }
+    case "--padding":
+        if let val = args.first, let p = Double(val) { contentPadding = CGFloat(p); args = args.dropFirst() }
     case "--win-width":
         if let val = args.first, let w = Double(val) { windowWidth = CGFloat(w); args = args.dropFirst() }
     case "--win-height":
@@ -117,13 +125,26 @@ class TopDraggableView: NSView {
 class BorderView: NSView {
     let shapeLayer = CAShapeLayer()
     let maskLayer = CAShapeLayer()
+    let webMaskLayer = CAShapeLayer()
+    let visualEffectView = NSVisualEffectView()
+    weak var webView: WKWebView?
     var currentBorderWidth: CGFloat = 1.2
     var currentCornerRadius: CGFloat = 18.0
+    var currentPadding: CGFloat = 0.0
     var colorSpec: String = "tahoe"
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
+
+        // Tahoe Liquid Glass background material for padding areas
+        visualEffectView.frame = bounds
+        visualEffectView.autoresizingMask = [.width, .height]
+        visualEffectView.material = .windowBackground
+        visualEffectView.blendingMode = .behindWindow
+        visualEffectView.state = .active
+        addSubview(visualEffectView, positioned: .below, relativeTo: nil)
+
         shapeLayer.fillColor = nil
         shapeLayer.zPosition = 999 // Ensure border is always on top of web content
         layer?.addSublayer(shapeLayer)
@@ -131,9 +152,10 @@ class BorderView: NSView {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    func updateBorder(width: CGFloat, radius: CGFloat, colorSpec: String) {
+    func updateBorder(width: CGFloat, radius: CGFloat, padding: CGFloat, colorSpec: String) {
         currentBorderWidth = width
         currentCornerRadius = radius
+        currentPadding = padding
         self.colorSpec = colorSpec
 
         let resolvedColor = resolveBorderColor(colorSpec, appearance: effectiveAppearance)
@@ -158,17 +180,34 @@ class BorderView: NSView {
         shapeLayer.path = path
         shapeLayer.lineWidth = width
         shapeLayer.strokeColor = resolvedColor
+
+        // 3. Layout and mask inner webView with concentric corner radius
+        let totalInset = width + padding
+        if let wv = webView {
+            wv.frame = bounds.insetBy(dx: totalInset, dy: totalInset)
+            let innerRadius = max(0, radius - totalInset)
+            if innerRadius > 0 {
+                webMaskLayer.frame = wv.bounds
+                webMaskLayer.path = CGPath(roundedRect: wv.bounds, cornerWidth: innerRadius, cornerHeight: innerRadius, transform: nil)
+                wv.layer?.mask = webMaskLayer
+                wv.layer?.cornerRadius = innerRadius
+                wv.layer?.masksToBounds = true
+            } else {
+                wv.layer?.mask = nil
+                wv.layer?.cornerRadius = 0
+            }
+        }
         CATransaction.commit()
     }
 
     override func layout() {
         super.layout()
-        updateBorder(width: currentBorderWidth, radius: currentCornerRadius, colorSpec: colorSpec)
+        updateBorder(width: currentBorderWidth, radius: currentCornerRadius, padding: currentPadding, colorSpec: colorSpec)
     }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        updateBorder(width: currentBorderWidth, radius: currentCornerRadius, colorSpec: colorSpec)
+        updateBorder(width: currentBorderWidth, radius: currentCornerRadius, padding: currentPadding, colorSpec: colorSpec)
     }
 }
 
@@ -201,25 +240,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDe
         // Outer container with rounded corners and border
         borderView = BorderView(frame: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight))
         borderView.autoresizingMask = [.width, .height]
-        borderView.updateBorder(width: borderWidth, radius: cornerRadius, colorSpec: borderColorHex)
 
         // WebKit Configuration
         let config = WKWebViewConfiguration()
         config.websiteDataStore = WKWebsiteDataStore.default() // persistent cookies & storage
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
 
-        let webInset = borderWidth
-        let webFrame = borderView.bounds.insetBy(dx: webInset, dy: webInset)
+        let totalInset = borderWidth + contentPadding
+        let webFrame = borderView.bounds.insetBy(dx: totalInset, dy: totalInset)
         webView = WKWebView(frame: webFrame, configuration: config)
         webView.autoresizingMask = [.width, .height]
         webView.wantsLayer = true
-        webView.layer?.cornerRadius = max(0, cornerRadius - borderWidth)
+        webView.layer?.cornerRadius = max(0, cornerRadius - totalInset)
         webView.layer?.masksToBounds = true
         webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = self
         webView.uiDelegate = self
 
+        borderView.webView = webView
         borderView.addSubview(webView)
+        borderView.updateBorder(width: borderWidth, radius: cornerRadius, padding: contentPadding, colorSpec: borderColorHex)
 
         // Top drag handle bar (transparent, allows dragging without accidental text selection)
         let dragBarHeight: CGFloat = 20.0

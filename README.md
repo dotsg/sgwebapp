@@ -98,6 +98,7 @@ sgwebapp remove
 - **Large concentric squircle corners**: `18.0 pt` corner radius.
 - **Ultra-fine glass stroke**: `1.2 pt` border width.
 - **Dynamic appearance**: Border color `"tahoe"` automatically shifts between a luminous translucent white outline (`alpha 0.22`) in Dark Mode and a refined subtle dark outline (`alpha 0.16`) in Light Mode.
+- **Liquid Glass padding**: Optional content padding (`padding`, default `0.0 pt` for full-bleed apps like maps, or `8.0`–`12.0 pt` for a floating native Tahoe sidebar/window feel) revealing the frosted backdrop blur.
 
 ### View & Update Global Defaults
 You can configure global defaults stored in `~/.config/sgwebapp/config.json`:
@@ -109,7 +110,8 @@ sgwebapp config
 # Set default border to a colorful accent (e.g. Catppuccin Blue, Emerald, or Rose)
 sgwebapp config set border_color 89b4fa
 sgwebapp config set border_width 2.0
-sgwebapp config set border_radius 20.0
+sgwebapp config set border_radius 18.0
+sgwebapp config set padding 10.0
 
 # Reset anytime back to macOS Tahoe defaults
 sgwebapp config reset
@@ -118,11 +120,14 @@ sgwebapp config reset
 ### Per-App Customization
 You can also override the style when installing an individual app:
 ```bash
-# Tahoe style (default)
+# Tahoe full-bleed style (default, padding: 0)
 sgwebapp install "Google Maps" "https://www.google.com/maps"
 
+# Tahoe frosted inset style (padding: 10pt)
+sgwebapp install "Solaree" "https://solaree.ai/index_cn.html" --padding 10.0
+
 # Custom accent style for a specific app
-sgwebapp install "GitHub" "https://github.com" --border-color "3b82f6" --border-width 2.0 --border-radius 16.0
+sgwebapp install "GitHub" "https://github.com" --border-color "3b82f6" --border-width 2.0 --border-radius 16.0 --padding 8.0
 ```
 
 ---
