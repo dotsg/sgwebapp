@@ -52,7 +52,7 @@ func resolveBorderColor(_ colorSpec: String, appearance: NSAppearance?) -> CGCol
         if isDark {
             return NSColor(white: 1.0, alpha: 0.22).cgColor
         } else {
-            return NSColor(white: 0.0, alpha: 0.16).cgColor
+            return NSColor(white: 0.0, alpha: 0.18).cgColor
         }
     }
     return parseHexColor(clean).cgColor
@@ -178,7 +178,7 @@ var borderWidth: CGFloat = {
     if let n = Bundle.main.object(forInfoDictionaryKey: "SGWebAppBorderWidth") as? NSNumber { return CGFloat(n.doubleValue) }
     if let w = globalConfig["border_width"] as? Double { return CGFloat(w) }
     if let n = globalConfig["border_width"] as? NSNumber { return CGFloat(n.doubleValue) }
-    return 1.2
+    return 1.0
 }()
 
 var cornerRadius: CGFloat = {
@@ -186,7 +186,7 @@ var cornerRadius: CGFloat = {
     if let n = Bundle.main.object(forInfoDictionaryKey: "SGWebAppCornerRadius") as? NSNumber { return CGFloat(n.doubleValue) }
     if let r = globalConfig["border_radius"] as? Double { return CGFloat(r) }
     if let n = globalConfig["border_radius"] as? NSNumber { return CGFloat(n.doubleValue) }
-    return 18.0
+    return 26.0
 }()
 
 var contentPadding: CGFloat = {
@@ -260,8 +260,8 @@ class BorderView: NSView {
     let webMaskLayer = CALayer()
     let visualEffectView = NSVisualEffectView()
     weak var webView: WKWebView?
-    var currentBorderWidth: CGFloat = 1.2
-    var currentCornerRadius: CGFloat = 18.0
+    var currentBorderWidth: CGFloat = 1.0
+    var currentCornerRadius: CGFloat = 26.0
     var currentPadding: CGFloat = 8.0
     var colorSpec: String = "tahoe"
 
@@ -315,7 +315,7 @@ class BorderView: NSView {
         borderOverlay.borderWidth = width
         borderOverlay.borderColor = resolvedColor
 
-        let totalInset = width + padding
+        let totalInset = padding > 0 ? padding : width
         if let wv = webView {
             wv.frame = bounds.insetBy(dx: totalInset, dy: totalInset)
             let innerRadius = max(0, radius - totalInset)
@@ -645,7 +645,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             config.preferences.setValue(true, forKey: "developerExtrasEnabled")
         }
 
-        let totalInset = borderWidth + contentPadding
+        let totalInset = contentPadding > 0 ? contentPadding : borderWidth
         let webFrame = borderView.bounds.insetBy(dx: totalInset, dy: totalInset)
         webView = WKWebView(frame: webFrame, configuration: config)
         webView.autoresizingMask = [.width, .height]

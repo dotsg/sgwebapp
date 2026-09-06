@@ -94,13 +94,13 @@ sgwebapp remove
 
 ---
 
-## 🎨 Liquid Glass Aesthetic & Configuration (`sgwebapp config`)
+## 🎨 macOS Finder Aesthetic & Configuration (`sgwebapp config`)
 
-`sgwebapp` defaults to the **macOS Liquid Glass** design language:
-- **Concentric squircle corners**: `18.0 pt` outer corner radius.
-- **Ultra-fine glass stroke**: `1.2 pt` border width.
-- **Dynamic appearance**: Border color `"tahoe"` automatically shifts between a luminous translucent white outline (`alpha 0.22`) in Dark Mode and a refined subtle dark outline (`alpha 0.16`) in Light Mode.
-- **Liquid Glass padding**: `8.0 pt` content inset padding revealing the frosted backdrop blur around the web application.
+`sgwebapp` defaults to native macOS window aesthetics (matching Finder and system apps 100%):
+- **macOS Finder squircle corners**: `26.0 pt` outer corner radius (continuous G2 curvature).
+- **Ultra-fine glass stroke**: `1.0 pt` hairline border width.
+- **Dynamic appearance**: Border color `"tahoe"` automatically shifts between a luminous translucent white outline (`alpha 0.22`) in Dark Mode and a refined subtle dark outline (`alpha 0.18`) in Light Mode.
+- **Native content inset padding**: `8.0 pt` content inset padding revealing the frosted backdrop blur around the web application, identical to Finder's sidebar margin.
 
 ### View & Update Global Defaults
 You can configure global defaults stored in `~/.config/sgwebapp/config.json`:
@@ -111,8 +111,8 @@ sgwebapp config
 
 # Set default border to a colorful accent (e.g. Catppuccin Blue, Emerald, or Rose)
 sgwebapp config set border_color 89b4fa
-sgwebapp config set border_width 2.0
-sgwebapp config set border_radius 18.0
+sgwebapp config set border_width 1.0
+sgwebapp config set border_radius 26.0
 sgwebapp config set padding 8.0
 
 # Reset anytime back to defaults
@@ -122,14 +122,14 @@ sgwebapp config reset
 ### Per-App Customization
 You can also override the style when installing an individual app:
 ```bash
-# Liquid Glass frosted inset style (default: radius 18pt, padding 8pt)
-sgwebapp install "Gemini" "https://gemini.google.com"
+# macOS Finder native style (default: radius 26pt, padding 8pt, border 1.0pt)
+sgwebapp install "Google Maps" "https://www.google.com/maps"
 
-# macOS Finder full-bleed style without padding (padding: 0, radius: 10pt)
-sgwebapp install "Google Maps" "https://www.google.com/maps" --padding 0.0 --border-radius 10.0
+# Full-bleed style without frosted margin (padding: 0)
+sgwebapp install "Solaree" "https://solaree.ai/index_cn.html" --padding 0.0
 
 # Custom accent style for a specific app
-sgwebapp install "GitHub" "https://github.com" --border-color "3b82f6" --border-width 2.0 --border-radius 16.0 --padding 8.0
+sgwebapp install "GitHub" "https://github.com" --border-color "3b82f6" --border-width 2.0 --border-radius 26.0 --padding 8.0
 ```
 
 ---

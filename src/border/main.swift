@@ -46,7 +46,7 @@ func resolveBorderColor(_ colorSpec: String, appearance: NSAppearance?) -> CGCol
         if isDark {
             return NSColor(white: 1.0, alpha: 0.22).cgColor
         } else {
-            return NSColor(white: 0.0, alpha: 0.16).cgColor
+            return NSColor(white: 0.0, alpha: 0.18).cgColor
         }
     }
     return parseHexColor(clean).cgColor
@@ -58,11 +58,13 @@ let globalConfig = readGlobalConfig()
 var borderColorHex = globalConfig["border_color"] as? String ?? "tahoe"
 var borderWidth: CGFloat = {
     if let w = globalConfig["border_width"] as? Double { return CGFloat(w) }
-    return 1.2
+    if let n = globalConfig["border_width"] as? NSNumber { return CGFloat(n.doubleValue) }
+    return 1.0
 }()
 var cornerRadius: CGFloat = {
     if let r = globalConfig["border_radius"] as? Double { return CGFloat(r) }
-    return 10.0
+    if let n = globalConfig["border_radius"] as? NSNumber { return CGFloat(n.doubleValue) }
+    return 26.0
 }()
 var targetAppNames: Set<String> = ["Google Chrome", "Brave Browser", "Microsoft Edge", "Chromium", "Arc"]
 var matchAllApps = false
@@ -74,9 +76,9 @@ while let arg = args.first {
     switch arg {
     case "--color":
         if let val = args.first { borderColorHex = val; args = args.dropFirst() }
-    case "--width":
+    case "--border-width", "--width":
         if let val = args.first, let w = Double(val) { borderWidth = CGFloat(w); args = args.dropFirst() }
-    case "--radius":
+    case "--border-radius", "--radius":
         if let val = args.first, let r = Double(val) { cornerRadius = CGFloat(r); args = args.dropFirst() }
     case "--all-apps":
         matchAllApps = true
@@ -87,8 +89,8 @@ while let arg = args.first {
         Usage: sgwebapp-border [options]
         Options:
           --color <hex|tahoe> Border color (hex e.g. 89b4fa, or 'tahoe' for dynamic glass, default: tahoe)
-          --width <float>     Border width (default: 1.2)
-          --radius <float>    Corner radius (default: 10.0)
+          --width <float>     Border width (default: 1.0)
+          --radius <float>    Corner radius (default: 26.0)
           --all-apps          Show border on all active applications
           --app <name>        Add application name to match list
           --help, -h          Show this help message
