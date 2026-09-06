@@ -1,5 +1,7 @@
 # sgwebapp 🚀
 
+[English](README.md) | [简体中文](README_zh.md)
+
 > **Bringing Omarchy's Web App experience to macOS.**  
 > Convert any website into a standalone, distraction-free macOS desktop app in seconds — frameless by default, with retina `.icns` icons, Spotlight integration, optional Chrome login import, and Hyprland-style active window borders.
 
