@@ -328,6 +328,8 @@ final class PopupWindowController: NSObject, NSWindowDelegate {
     let window: NSWindow
     let webView: WKWebView
     private var retained: PopupWindowController?
+    private var titleObservation: NSKeyValueObservation?
+    private var urlObservation: NSKeyValueObservation?
 
     init(webView: WKWebView, features: WKWindowFeatures) {
         self.webView = webView
@@ -344,6 +346,18 @@ final class PopupWindowController: NSObject, NSWindowDelegate {
         window.delegate = self
         window.isReleasedWhenClosed = false
         retained = self
+
+        // Track the page: an auth flow redirects through several hosts, and a
+        // window frozen at "Sign in" tells the user nothing about where their
+        // credentials are going. The subtitle carries the host, which is the
+        // closest thing to an address bar a popup can offer.
+        titleObservation = webView.observe(\.title, options: [.initial, .new]) { [weak self] wv, _ in
+            guard let title = wv.title, !title.isEmpty else { return }
+            self?.window.title = title
+        }
+        urlObservation = webView.observe(\.url, options: [.initial, .new]) { [weak self] wv, _ in
+            self?.window.subtitle = wv.url?.host ?? ""
+        }
     }
 
     func show() {
@@ -356,6 +370,8 @@ final class PopupWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        titleObservation = nil
+        urlObservation = nil
         webView.stopLoading()
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
@@ -403,8 +419,13 @@ func errorPageHTML(url: String, message: String) -> String {
 // MARK: - Web policy (shared by the main window and every popup)
 
 final class WebPolicyDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
-    /// Schemes WKWebView can render itself. Anything else belongs to another app.
-    static let internalSchemes: Set<String> = ["http", "https", "about", "blob", "data", "file"]
+    /// Schemes WKWebView handles itself. Anything else belongs to another app.
+    ///
+    /// "javascript" is listed defensively: WebKit evaluates javascript: URLs
+    /// internally without consulting this delegate, so href="javascript:void(0)"
+    /// links work either way, but handing one to NSWorkspace on some future
+    /// code path would be both broken and unwise.
+    static let internalSchemes: Set<String> = ["http", "https", "about", "blob", "data", "file", "javascript"]
 
     /// Called when the user asks to retry after a load failure.
     var onRetry: ((WKWebView) -> Void)?

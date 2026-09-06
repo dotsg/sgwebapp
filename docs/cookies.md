@@ -38,7 +38,13 @@ Two mechanisms reduce that cost.
 sgwebapp import-cookies "Solaree"                 # its own domain
 sgwebapp import-cookies "Gmail" --domain google.com
 sgwebapp import-cookies "X" --browser brave --profile "Profile 1"
+sgwebapp import-cookies "Solaree" --dry-run       # show the domains, prompt nothing
 ```
+
+`--dry-run` prints which domains would be read and where the result would be
+staged, without touching the keychain. The domain is derived from the app's URL,
+which handles IP literals and two-label suffixes such as `com.cn` — worth
+checking with `--dry-run` first if the app points at something unusual.
 
 This reads the Chromium cookie database, decrypts it, and stages the cookies at
 `~/.config/sgwebapp/pending/<bundle-id>.json`. The next launch injects them

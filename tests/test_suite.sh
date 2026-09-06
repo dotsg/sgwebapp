@@ -58,6 +58,10 @@ fi
 
 check "make build compiles the Swift binaries" make -C "$PROJECT_ROOT" build
 
+# make runs each recipe line in its own shell, so an early `exit 0` does not
+# skip the following line: `make lint` must still succeed without shellcheck.
+check "make lint succeeds whether or not shellcheck is installed" make -C "$PROJECT_ROOT" lint
+
 # ---------------------------------------------------------------- install
 check "sgwebapp install command succeeded" "$BIN" install "$TEST_APP_NAME" "$TEST_APP_URL"
 
@@ -232,6 +236,32 @@ if "$BIN" import-cookies "NoSuchApp" >/dev/null 2>&1; then
   fail "import-cookies accepted an unknown app name"
 else
   pass "import-cookies rejects an unknown app name"
+fi
+
+# Domain resolution feeds the cookie filter: getting it wrong silently exports
+# nothing (an IP) or too much (a country-code suffix).
+domain_case() {
+  # domain_case <app> <url> <expected domain>
+  local app="$1" url="$2" want="$3"
+  "$BIN" install "$app" "$url" >/dev/null 2>&1
+  local out
+  out=$("$BIN" import-cookies "$app" --dry-run 2>/dev/null || echo "")
+  if grep -q "cookies for: $want\b" <<<"$out"; then
+    pass "import-cookies resolves $url to $want"
+  else
+    fail "import-cookies resolved $url to the wrong domain (wanted $want): $out"
+  fi
+  rm -rf "$SGWEBAPP_APPS_DIR/$app.app"
+}
+domain_case "DomIP"    "http://127.0.0.1:8080/app"    "127.0.0.1"
+domain_case "DomCCTLD" "https://news.sina.com.cn/x"   "sina.com.cn"
+domain_case "DomPlain" "https://mail.google.com/mail" "google.com"
+
+# The helper script must be located before anything else runs.
+if "$BIN" import-cookies "$TEST_APP_NAME" --dry-run >/dev/null 2>&1; then
+  pass "import-cookies --dry-run works without touching the keychain"
+else
+  fail "import-cookies --dry-run failed"
 fi
 
 # ---------------------------------------------------------------- cookie extractor

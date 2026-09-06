@@ -70,6 +70,7 @@ ${BOLD}COMMANDS:${RESET}
   config [get|set|reset]        View or update default border & engine configuration
   border <start|stop|status|run> Manage the native floating window border daemon
   import-cookies <name>         Seed a web app's login from your Chrome profile
+                                (add --dry-run to preview without a keychain prompt)
   cookies <status|clear>        Inspect or wipe the shared login cookie jar
   version                       Show version information
   help                          Show this help message
@@ -180,15 +181,48 @@ url_host() {
 }
 
 # Reduce a host to its registrable domain (best effort, good enough for cookies).
+# Not a Public Suffix List: it handles IP literals and the common two-label
+# suffixes, which is where naive "last two labels" goes visibly wrong.
 registrable_domain() {
   local host="$1"
+
+  # An IPv4 literal has no registrable domain; "127.0.0.1" must not become "0.1".
+  if [[ "$host" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    printf '%s' "$host"
+    return 0
+  fi
+  # Bracketed IPv6, or any host with no dot at all (localhost, an intranet name).
+  if [[ "$host" == \[*\] || "$host" != *.* ]]; then
+    printf '%s' "$host"
+    return 0
+  fi
+
   local parts
   parts=$(awk -F. '{print NF}' <<<"$host")
   if (( parts <= 2 )); then
     printf '%s' "$host"
-  else
-    awk -F. '{print $(NF-1)"."$NF}' <<<"$host"
+    return 0
   fi
+
+  # co.uk, com.cn, com.au ... need three labels, not two.
+  local last_two
+  last_two=$(awk -F. '{print $(NF-1)"."$NF}' <<<"$host")
+  case "$last_two" in
+    co.uk|org.uk|ac.uk|gov.uk|me.uk|net.uk|sch.uk \
+    |com.cn|net.cn|org.cn|gov.cn|edu.cn|ac.cn \
+    |com.au|net.au|org.au|edu.au|gov.au \
+    |co.jp|or.jp|ne.jp|ac.jp|go.jp \
+    |com.br|com.mx|com.tw|com.hk|com.sg|com.tr|com.ar|co.kr|co.in|co.nz|co.za)
+      if (( parts >= 3 )); then
+        awk -F. '{print $(NF-2)"."$(NF-1)"."$NF}' <<<"$host"
+      else
+        printf '%s' "$host"
+      fi
+      ;;
+    *)
+      printf '%s' "$last_two"
+      ;;
+  esac
 }
 
 # Validate app name
@@ -839,12 +873,14 @@ cmd_import_cookies() {
   local browser="chrome"
   local profile="Default"
   local domains=()
+  local dry_run=0
 
   while (( $# > 0 )); do
     case "$1" in
       --browser) [[ $# -ge 2 ]] || { log_error "--browser requires a value"; exit 1; }; browser="$2"; shift 2 ;;
       --profile) [[ $# -ge 2 ]] || { log_error "--profile requires a value"; exit 1; }; profile="$2"; shift 2 ;;
       --domain)  [[ $# -ge 2 ]] || { log_error "--domain requires a value"; exit 1; }; domains+=("$2"); shift 2 ;;
+      --dry-run) dry_run=1; shift ;;
       *) log_error "Unknown option: $1"; exit 1 ;;
     esac
   done
@@ -855,6 +891,11 @@ cmd_import_cookies() {
   url=$(read_meta "$meta" url "")
   engine=$(read_meta "$meta" engine "native")
   bundle_id=$(read_meta "$meta" bundle_id "")
+  # Metadata is the source of truth, but fall back to the bundle itself if that
+  # file was hand-edited or truncated.
+  if [[ -z "$bundle_id" && -f "$app_path/Contents/Info.plist" ]]; then
+    bundle_id=$(plutil -extract CFBundleIdentifier raw -o - "$app_path/Contents/Info.plist" 2>/dev/null || true)
+  fi
 
   if [[ "$engine" == "chrome" ]]; then
     log_warn "'$app_name' uses the Chrome engine and already shares Chrome's live session."
@@ -862,7 +903,7 @@ cmd_import_cookies() {
     return 0
   fi
   if [[ -z "$bundle_id" ]]; then
-    log_error "Metadata for '$app_name' has no bundle_id; reinstall the app."
+    log_error "Could not determine the bundle identifier for '$app_name'; reinstall the app."
     exit 1
   fi
 
@@ -879,6 +920,21 @@ cmd_import_cookies() {
   for d in "${domains[@]}"; do
     domain_args+=(--domain "$d")
   done
+
+  if [[ -z "$TOOLS_DIR" || ! -f "$TOOLS_DIR/chrome_cookies.py" ]]; then
+    log_error "chrome_cookies.py could not be found."
+    log_error "Run this from an sgwebapp checkout, or reinstall with 'make install'."
+    exit 1
+  fi
+
+  # Lets you confirm which domains would be read before triggering a keychain
+  # prompt, and gives the test suite a way to exercise domain resolution.
+  if (( dry_run == 1 )); then
+    log_info "Would read $browser cookies for: ${domains[*]}"
+    echo "    target app:  $app_name ($bundle_id)"
+    echo "    staging file: $PENDING_DIR/$bundle_id.json"
+    return 0
+  fi
 
   log_info "Reading $browser cookies for: ${domains[*]}"
   log_warn "macOS will ask for keychain access to '$browser Safe Storage'. Choose Allow."

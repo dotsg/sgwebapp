@@ -40,9 +40,14 @@ install: build
 	@ln -sf $(BIN_DIR)/sgwebapp $(BIN_DIR)/sgwebapp-remove
 	@echo "Installed sgwebapp to $(BIN_DIR) (support files in $(SHARE_DIR))"
 
+# One recipe line, so the early exit actually skips the shellcheck call: make
+# runs each line in its own shell and would otherwise carry on to the next one.
 lint:
-	@command -v shellcheck >/dev/null 2>&1 || { echo "shellcheck not installed; skipping"; exit 0; }
-	shellcheck -S warning bin/sgwebapp tests/test_suite.sh
+	@if command -v shellcheck >/dev/null 2>&1; then \
+		shellcheck -S warning bin/sgwebapp tests/test_suite.sh; \
+	else \
+		echo "shellcheck not installed; skipping"; \
+	fi
 
 clean:
 	rm -f bin/sgwebapp-border bin/sgwebapp-runtime
