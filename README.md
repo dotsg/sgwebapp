@@ -92,6 +92,41 @@ sgwebapp remove
 
 ---
 
+## 🎨 macOS Tahoe Aesthetic & Configuration (`sgwebapp config`)
+
+`sgwebapp` defaults to the **macOS Tahoe (macOS 26)** Liquid Glass design language:
+- **Large concentric squircle corners**: `18.0 pt` corner radius.
+- **Ultra-fine glass stroke**: `1.2 pt` border width.
+- **Dynamic appearance**: Border color `"tahoe"` automatically shifts between a luminous translucent white outline (`alpha 0.22`) in Dark Mode and a refined subtle dark outline (`alpha 0.16`) in Light Mode.
+
+### View & Update Global Defaults
+You can configure global defaults stored in `~/.config/sgwebapp/config.json`:
+
+```bash
+# View current configuration
+sgwebapp config
+
+# Set default border to a colorful accent (e.g. Catppuccin Blue, Emerald, or Rose)
+sgwebapp config set border_color 89b4fa
+sgwebapp config set border_width 2.0
+sgwebapp config set border_radius 20.0
+
+# Reset anytime back to macOS Tahoe defaults
+sgwebapp config reset
+```
+
+### Per-App Customization
+You can also override the style when installing an individual app:
+```bash
+# Tahoe style (default)
+sgwebapp install "Google Maps" "https://www.google.com/maps"
+
+# Custom accent style for a specific app
+sgwebapp install "GitHub" "https://github.com" --border-color "3b82f6" --border-width 2.0 --border-radius 16.0
+```
+
+---
+
 ## 🪟 Active Window Border Daemon (`sgwebapp border`)
 
 Want the signature **Omarchy / Hyprland** active window border on macOS? `sgwebapp` includes a compiled Swift daemon that tracks active Chrome web app windows and renders a floating rounded border over them.

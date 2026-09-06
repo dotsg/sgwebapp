@@ -27,10 +27,43 @@ func parseHexColor(_ hexString: String) -> NSColor {
     return NSColor(red: 0.54, green: 0.71, blue: 0.98, alpha: 1.0)
 }
 
-// Configuration arguments
-var borderColorHex = "89b4fa"
-var borderWidth: CGFloat = 2.5
-var cornerRadius: CGFloat = 10.0
+// Reading global config file (~/.config/sgwebapp/config.json) if present
+func readGlobalConfig() -> [String: Any] {
+    let home = FileManager.default.homeDirectoryForCurrentUser
+    let configFile = home.appendingPathComponent(".config/sgwebapp/config.json")
+    guard let data = try? Data(contentsOf: configFile),
+          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        return [:]
+    }
+    return json
+}
+
+// Parse color string or Tahoe dynamic glass appearance
+func resolveBorderColor(_ colorSpec: String, appearance: NSAppearance?) -> CGColor {
+    let clean = colorSpec.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if clean == "tahoe" || clean == "auto" || clean == "system" {
+        let isDark = appearance?.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        if isDark {
+            return NSColor(white: 1.0, alpha: 0.22).cgColor
+        } else {
+            return NSColor(white: 0.0, alpha: 0.16).cgColor
+        }
+    }
+    return parseHexColor(clean).cgColor
+}
+
+let globalConfig = readGlobalConfig()
+
+// Configuration arguments (defaults to macOS Tahoe Liquid Glass aesthetic)
+var borderColorHex = globalConfig["border_color"] as? String ?? "tahoe"
+var borderWidth: CGFloat = {
+    if let w = globalConfig["border_width"] as? Double { return CGFloat(w) }
+    return 1.2
+}()
+var cornerRadius: CGFloat = {
+    if let r = globalConfig["border_radius"] as? Double { return CGFloat(r) }
+    return 18.0
+}()
 var targetAppNames: Set<String> = ["Google Chrome", "Brave Browser", "Microsoft Edge", "Chromium", "Arc"]
 var matchAllApps = false
 
@@ -53,12 +86,12 @@ while let arg = args.first {
         print("""
         Usage: sgwebapp-border [options]
         Options:
-          --color <hex>     Border color (hex, e.g. 89b4fa or #3b82f6, default: 89b4fa)
-          --width <float>   Border width (default: 2.5)
-          --radius <float>  Corner radius (default: 10.0)
-          --all-apps        Show border on all active applications
-          --app <name>      Add application name to match list
-          --help, -h        Show this help message
+          --color <hex|tahoe> Border color (hex e.g. 89b4fa, or 'tahoe' for dynamic glass, default: tahoe)
+          --width <float>     Border width (default: 1.2)
+          --radius <float>    Corner radius (default: 18.0)
+          --all-apps          Show border on all active applications
+          --app <name>        Add application name to match list
+          --help, -h          Show this help message
         """)
         exit(0)
     default:
@@ -185,7 +218,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         if panel.frame != cocoaFrame {
             panel.setFrame(cocoaFrame, display: true)
-            borderView.updatePath(radius: cornerRadius, width: borderWidth, color: borderColor.cgColor)
+            let resolvedColor = resolveBorderColor(borderColorHex, appearance: NSApp.effectiveAppearance)
+            borderView.updatePath(radius: cornerRadius, width: borderWidth, color: resolvedColor)
         }
 
         if !panel.isVisible {

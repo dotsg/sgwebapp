@@ -27,18 +27,54 @@ func parseHexColor(_ hexString: String) -> NSColor {
     return NSColor(red: 0.54, green: 0.71, blue: 0.98, alpha: 1.0)
 }
 
-// Config variables with Info.plist fallbacks
+// Reading global config file (~/.config/sgwebapp/config.json) if present
+func readGlobalConfig() -> [String: Any] {
+    let home = FileManager.default.homeDirectoryForCurrentUser
+    let configFile = home.appendingPathComponent(".config/sgwebapp/config.json")
+    guard let data = try? Data(contentsOf: configFile),
+          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        return [:]
+    }
+    return json
+}
+
+// Parse color string or Tahoe dynamic glass appearance
+func resolveBorderColor(_ colorSpec: String, appearance: NSAppearance?) -> CGColor {
+    let clean = colorSpec.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if clean == "tahoe" || clean == "auto" || clean == "system" {
+        let isDark = appearance?.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        if isDark {
+            // Tahoe dark glass stroke: subtle luminous outline
+            return NSColor(white: 1.0, alpha: 0.22).cgColor
+        } else {
+            // Tahoe light glass stroke: refined subtle dark outline
+            return NSColor(white: 0.0, alpha: 0.16).cgColor
+        }
+    }
+    return parseHexColor(clean).cgColor
+}
+
+let globalConfig = readGlobalConfig()
+
+// Config variables with precedence: CLI args > Info.plist > config.json > Tahoe defaults
 var targetURLString = Bundle.main.object(forInfoDictionaryKey: "SGWebAppURL") as? String ?? "https://example.com"
 var appTitle = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Web App"
-var borderColorHex = Bundle.main.object(forInfoDictionaryKey: "SGWebAppBorderColor") as? String ?? "89b4fa"
+var borderColorHex = Bundle.main.object(forInfoDictionaryKey: "SGWebAppBorderColor") as? String
+    ?? globalConfig["border_color"] as? String
+    ?? "tahoe"
+
 var borderWidth: CGFloat = {
     if let w = Bundle.main.object(forInfoDictionaryKey: "SGWebAppBorderWidth") as? Double { return CGFloat(w) }
-    return 2.5
+    if let w = globalConfig["border_width"] as? Double { return CGFloat(w) }
+    return 1.2
 }()
+
 var cornerRadius: CGFloat = {
     if let r = Bundle.main.object(forInfoDictionaryKey: "SGWebAppCornerRadius") as? Double { return CGFloat(r) }
-    return 10.0
+    if let r = globalConfig["border_radius"] as? Double { return CGFloat(r) }
+    return 18.0
 }()
+
 var windowWidth: CGFloat = 1200
 var windowHeight: CGFloat = 800
 
@@ -67,8 +103,6 @@ while let arg = args.first {
     }
 }
 
-let borderColor = parseHexColor(borderColorHex)
-
 class FramelessWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
@@ -83,9 +117,9 @@ class TopDraggableView: NSView {
 class BorderView: NSView {
     let shapeLayer = CAShapeLayer()
     let maskLayer = CAShapeLayer()
-    var currentBorderWidth: CGFloat = 2.5
-    var currentCornerRadius: CGFloat = 10.0
-    var currentBorderColor: CGColor = NSColor.blue.cgColor
+    var currentBorderWidth: CGFloat = 1.2
+    var currentCornerRadius: CGFloat = 18.0
+    var colorSpec: String = "tahoe"
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -97,22 +131,24 @@ class BorderView: NSView {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    func updateBorder(width: CGFloat, radius: CGFloat, color: CGColor) {
+    func updateBorder(width: CGFloat, radius: CGFloat, colorSpec: String) {
         currentBorderWidth = width
         currentCornerRadius = radius
-        currentBorderColor = color
+        self.colorSpec = colorSpec
+
+        let resolvedColor = resolveBorderColor(colorSpec, appearance: effectiveAppearance)
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
 
-        // 1. Hard-mask the entire container view so all subviews (including WKWebView) have rounded corners
+        // 1. Hard-mask container view to Tahoe smooth squircle corner radius
         maskLayer.frame = bounds
         maskLayer.path = CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
         layer?.mask = maskLayer
         layer?.cornerRadius = radius
         layer?.masksToBounds = true
 
-        // 2. Draw high-precision border stroke on top
+        // 2. Draw high-precision Tahoe glass stroke
         let inset = width / 2.0
         let rect = bounds.insetBy(dx: inset, dy: inset)
         let strokeRadius = max(0, radius - inset)
@@ -121,13 +157,18 @@ class BorderView: NSView {
         shapeLayer.frame = bounds
         shapeLayer.path = path
         shapeLayer.lineWidth = width
-        shapeLayer.strokeColor = color
+        shapeLayer.strokeColor = resolvedColor
         CATransaction.commit()
     }
 
     override func layout() {
         super.layout()
-        updateBorder(width: currentBorderWidth, radius: currentCornerRadius, color: currentBorderColor)
+        updateBorder(width: currentBorderWidth, radius: currentCornerRadius, colorSpec: colorSpec)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateBorder(width: currentBorderWidth, radius: currentCornerRadius, colorSpec: colorSpec)
     }
 }
 
@@ -160,7 +201,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDe
         // Outer container with rounded corners and border
         borderView = BorderView(frame: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight))
         borderView.autoresizingMask = [.width, .height]
-        borderView.updateBorder(width: borderWidth, radius: cornerRadius, color: borderColor.cgColor)
+        borderView.updateBorder(width: borderWidth, radius: cornerRadius, colorSpec: borderColorHex)
 
         // WebKit Configuration
         let config = WKWebViewConfiguration()

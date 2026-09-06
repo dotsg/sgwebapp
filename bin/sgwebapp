@@ -8,6 +8,7 @@ set -euo pipefail
 
 VERSION="1.0.0"
 CONFIG_DIR="$HOME/.config/sgwebapp"
+CONFIG_FILE="$CONFIG_DIR/config.json"
 APPS_DIR="$HOME/Applications"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BORDER_BIN="$SCRIPT_DIR/sgwebapp-border"
@@ -51,6 +52,7 @@ ${BOLD}COMMANDS:${RESET}
   list                          List all installed web apps
   launch <name|url>             Launch an installed web app or arbitrary URL
   remove <name>                 Remove an installed web app
+  config [get|set|reset]        View or update default border & engine configuration
   border <start|stop|status|run> Manage the native floating window border daemon
   version                       Show version information
   help                          Show this help message
@@ -58,9 +60,12 @@ ${BOLD}COMMANDS:${RESET}
 ${BOLD}EXAMPLES:${RESET}
   sgwebapp install "Solaree" "https://solaree.ai/index_cn.html"
   sgwebapp install "Google Maps" "https://www.google.com/maps"
+  sgwebapp config set border_color 89b4fa
+  sgwebapp config set border_radius 18.0
+  sgwebapp config reset
   sgwebapp list
   sgwebapp launch "Solaree"
-  sgwebapp border start --color 89b4fa --width 2.5
+  sgwebapp border start
   sgwebapp remove "Solaree"
 
 EOF
@@ -251,15 +256,53 @@ with open('$raw_icon', 'wb') as f:
   done
 }
 
+get_config_val() {
+  local key="$1"
+  local default_val="$2"
+  if [[ -f "$CONFIG_FILE" ]]; then
+    python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('$key', '$default_val'))" 2>/dev/null || echo "$default_val"
+  else
+    echo "$default_val"
+  fi
+}
+
+set_config_val() {
+  local key="$1"
+  local val="$2"
+  mkdir -p "$CONFIG_DIR"
+  python3 -c "
+import json, os
+p = '$CONFIG_FILE'
+data = {}
+if os.path.exists(p):
+    try: data = json.load(open(p))
+    except: pass
+v = '$val'
+try:
+    if '.' in v: v = float(v)
+    else: v = int(v)
+except:
+    pass
+data['$key'] = v
+json.dump(data, open(p, 'w'), indent=2)
+"
+}
+
 # Install subcommand
 cmd_install() {
+  local def_color def_width def_radius def_engine
+  def_color=$(get_config_val "border_color" "tahoe")
+  def_width=$(get_config_val "border_width" "1.2")
+  def_radius=$(get_config_val "border_radius" "18.0")
+  def_engine=$(get_config_val "engine" "native")
+
   local app_name=""
   local app_url=""
   local custom_icon=""
-  local engine="native"
-  local border_color="89b4fa"
-  local border_width="2.5"
-  local border_radius="10.0"
+  local engine="$def_engine"
+  local border_color="$def_color"
+  local border_width="$def_width"
+  local border_radius="$def_radius"
 
   local pos_args=()
   while (( $# > 0 )); do
@@ -586,6 +629,57 @@ cmd_border() {
   esac
 }
 
+# Config subcommand
+cmd_config() {
+  local action="${1:-get}"
+  shift || true
+
+  mkdir -p "$CONFIG_DIR"
+
+  case "$action" in
+    get|list|"")
+      echo -e "${BOLD}Current sgwebapp Configuration (Defaults to macOS Tahoe style):${RESET}"
+      local cur_color cur_width cur_radius cur_engine
+      cur_color=$(get_config_val "border_color" "tahoe")
+      cur_width=$(get_config_val "border_width" "1.2")
+      cur_radius=$(get_config_val "border_radius" "18.0")
+      cur_engine=$(get_config_val "engine" "native")
+      echo "  • border_color:  $cur_color (options: tahoe, auto, 89b4fa, or hex)"
+      echo "  • border_width:  $cur_width pt"
+      echo "  • border_radius: $cur_radius pt (Tahoe signature squircle)"
+      echo "  • engine:        $cur_engine (options: native, chrome)"
+      echo ""
+      echo "Config file: $CONFIG_FILE"
+      echo "Change settings with: sgwebapp config set <key> <value>"
+      ;;
+    set)
+      if (( $# < 2 )); then
+        log_error "Usage: sgwebapp config set <key> <value>"
+        echo "Valid keys: border_color, border_width, border_radius, engine"
+        exit 1
+      fi
+      local k="$1" v="$2"
+      set_config_val "$k" "$v"
+      log_success "Updated $k = $v in $CONFIG_FILE"
+      ;;
+    reset)
+      cat > "$CONFIG_FILE" <<EOF
+{
+  "border_color": "tahoe",
+  "border_width": 1.2,
+  "border_radius": 18.0,
+  "engine": "native"
+}
+EOF
+      log_success "Reset configuration to macOS Tahoe defaults (18pt radius, 1.2pt glass border)."
+      ;;
+    *)
+      log_error "Unknown config action: $action. Use 'sgwebapp config' or 'sgwebapp config set <key> <value>'."
+      exit 1
+      ;;
+  esac
+}
+
 # Main routing
 main() {
   local base_name
@@ -611,6 +705,7 @@ main() {
     list) cmd_list "$@" ;;
     launch) cmd_launch "$@" ;;
     remove) cmd_remove "$@" ;;
+    config) cmd_config "$@" ;;
     border) cmd_border "$@" ;;
     version | -v | --version) echo "sgwebapp version $VERSION" ;;
     help | -h | --help) print_help ;;
