@@ -1026,7 +1026,7 @@ cmd_config() {
       cur_share=$(get_config_val "share_login" "true")
       echo "  • border_color:  $cur_color (options: tahoe, auto, 89b4fa, or hex)"
       echo "  • border_width:  $cur_width pt"
-      echo "  • border_radius: $cur_radius pt (macOS Finder continuous squircle)"
+      echo "  • border_radius: $cur_radius pt (macOS continuous squircle)"
       echo "  • padding:       $cur_padding pt (Content inset margin)"
       echo "  • engine:        $cur_engine (options: native, chrome)"
       echo "  • share_login:   $cur_share (sync SSO cookies between sgwebapp apps)"
@@ -1063,7 +1063,7 @@ cmd_config() {
   "share_login": true
 }
 EOF
-      log_success "Reset configuration to macOS Finder defaults (26pt radius, 0.5pt glass border, 8.0pt padding)."
+      log_success "Reset configuration to macOS system defaults (26pt radius, 0.5pt glass border, 8.0pt padding)."
       ;;
     *)
       log_error "Unknown config action: $action. Use 'sgwebapp config' or 'sgwebapp config set <key> <value>'."

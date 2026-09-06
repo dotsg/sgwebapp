@@ -94,13 +94,13 @@ sgwebapp remove
 
 ---
 
-## 🎨 macOS Finder Aesthetic & Configuration (`sgwebapp config`)
+## 🎨 macOS Native Window Aesthetic & Configuration (`sgwebapp config`)
 
-`sgwebapp` defaults to native macOS window aesthetics (matching Finder and system apps 100%):
-- **macOS Finder squircle corners**: `26.0 pt` outer corner radius (continuous G2 curvature).
+`sgwebapp` defaults to native macOS system window aesthetics (matching system apps like Finder, Settings, and Notes 100%):
+- **macOS continuous squircle corners**: `26.0 pt` outer corner radius using Apple's continuous G2 curvature (`.continuous`).
 - **Ultra-fine glass stroke**: `0.5 pt` hairline border width (exact 1 physical pixel on Retina display).
-- **Dynamic appearance**: Border color `"tahoe"` automatically adapts to system appearance: in Light Mode, the window boundary seamlessly blends with the native macOS WindowServer compositor drop shadow for an authentic, 100% Finder-identical edge (eliminating double/heavy strokes on non-Retina and Retina displays alike); in Dark Mode, it renders a subtle translucent luminous outline (`alpha 0.18`) ensuring clean separation from dark wallpapers.
-- **Native content inset padding**: `8.0 pt` content inset padding revealing the frosted backdrop blur around the web application, identical to Finder's sidebar margin.
+- **Dynamic appearance**: Border color `"tahoe"` automatically adapts to system appearance: in Light Mode, the window boundary seamlessly blends with the native macOS WindowServer compositor drop shadow for an authentic, clean native edge (eliminating double/heavy strokes on non-Retina and Retina displays alike); in Dark Mode, it renders a subtle translucent luminous outline (`alpha 0.18`) ensuring clean separation from dark wallpapers.
+- **Native content inset padding**: `8.0 pt` content inset padding revealing the frosted backdrop blur around the web application, identical to native macOS sidebar and card margins.
 
 ### View & Update Global Defaults
 You can configure global defaults stored in `~/.config/sgwebapp/config.json`:
@@ -122,7 +122,7 @@ sgwebapp config reset
 ### Per-App Customization
 You can also override the style when installing an individual app:
 ```bash
-# macOS Finder native style (default: radius 26pt, padding 8pt, border 0.5pt)
+# macOS native window style (default: radius 26pt, padding 8pt, border 0.5pt)
 sgwebapp install "Google Maps" "https://www.google.com/maps"
 
 # Full-bleed style without frosted margin (padding: 0)
