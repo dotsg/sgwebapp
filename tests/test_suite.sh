@@ -62,7 +62,7 @@ else
 fi
 
 # Verify app bundle structure
-if [[ -d "$TARGET_APP" && -f "$TARGET_APP/Contents/MacOS/launcher" && -f "$TARGET_APP/Contents/Info.plist" && -f "$TARGET_APP/Contents/Resources/AppIcon.icns" && -f "$TARGET_APP/Contents/Resources/sgwebapp.json" ]]; then
+if [[ -d "$TARGET_APP" && ( -f "$TARGET_APP/Contents/MacOS/$TEST_APP_NAME" || -f "$TARGET_APP/Contents/MacOS/launcher" ) && -f "$TARGET_APP/Contents/Info.plist" && -f "$TARGET_APP/Contents/Resources/AppIcon.icns" && -f "$TARGET_APP/Contents/Resources/sgwebapp.json" ]]; then
   pass "Generated .app bundle has all required files (launcher, Info.plist, AppIcon.icns, sgwebapp.json)"
 else
   fail "Generated .app bundle is missing expected files"

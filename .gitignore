@@ -1,5 +1,6 @@
 # Build artifacts
 bin/sgwebapp-border
+bin/sgwebapp-runtime
 
 # macOS system files
 .DS_Store

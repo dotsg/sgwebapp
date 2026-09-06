@@ -7,12 +7,14 @@
 
 ## 🌟 Features
 
-- **🍪 Zero-Effort Chrome Cookie Sharing**: Launches via Chromium `--app` mode using your default Chrome profile. You stay logged into all your accounts with zero re-login prompts.
-- **🖥️ Clean, Distraction-Free Window**: Strips away browser address bars, tab bars, bookmark bars, and extension icons.
+- **🚫 True 0-Topbar & 0-Traffic-Light Mode (Native Engine, Default)**: A compiled native Cocoa/WebKit runner that creates 100% frameless windows with zero title bars and zero traffic lights, surrounded by a customizable Hyprland-style rounded accent border.
+- **🍪 Dual Engine Support**:
+  - **Native Engine (`--engine native`, Default)**: Completely frameless (0 titlebar, 0 traffic lights), native WebKit GPU acceleration, independent Dock icon and name, persistent cookie store.
+  - **Chrome Engine (`--engine chrome`)**: Direct Chromium `--app` mode reusing Google Chrome's live active profile and cookies.
 - **🎨 Retina macOS Icons (`.icns`)**: Automatically downloads high-resolution `apple-touch-icon` from target pages and builds native multi-size Apple `.icns` packages using macOS built-in `sips` and `iconutil`.
 - **🔍 Full macOS Desktop Integration**: Installs to `~/Applications/<Name>.app`. Fully indexable and launchable via **Spotlight (`Cmd + Space`)**, **Launchpad**, and the **Dock**.
-- **🪟 Built-in Native Border Daemon (`sgwebapp-border`)**: A standalone, zero-dependency Swift daemon that draws a customizable rounded border (inspired by Omarchy / Hyprland) around active web app windows. No `yabai` or Homebrew window manager required!
-- **⚡ Zero Bloat**: No Node.js runtime, no Electron overhead, no background battery drain.
+- **🪟 Built-in Native Border Daemon (`sgwebapp-border`)**: A standalone, zero-dependency Swift daemon that draws a customizable rounded border (inspired by Omarchy / Hyprland) around active windows.
+- **⚡ Ultra Lightweight**: Native runner is only ~100 KB! No Electron bloat, no Node.js runtime, instantaneous startup.
 
 ---
 
@@ -24,7 +26,7 @@ Clone the repository and add `bin/` to your `$PATH`:
 git clone https://github.com/wuvist/sgwebapp.git ~/code/sgwebapp
 cd ~/code/sgwebapp
 
-# Compile the optional Swift border daemon & run test suite
+# Compile the native runtime & border daemon, then run tests
 make build
 make test
 ```
@@ -43,16 +45,17 @@ sudo make install
 
 ## 🚀 Quick Start
 
-### 1. Install a Web App
+### 1. Install a Web App (Frameless with 0 Top Bar & Border)
 ```bash
-# Example 1: Solaree
+# Default: Native frameless engine (0 topbar, 0 traffic lights, beautiful border)
 sgwebapp install "Solaree" "https://solaree.ai/index_cn.html"
-
-# Example 2: Google Maps
 sgwebapp install "Google Maps" "https://www.google.com/maps"
 
-# Example 3: With a custom local or remote icon
-sgwebapp install "My Dashboard" "https://example.com" "https://example.com/icon.png"
+# Customize the accent border color and width:
+sgwebapp install "GitHub" "https://github.com" --border-color "3b82f6" --border-width 3.0
+
+# Optional: If you prefer Chrome's engine directly (retaining standard 28px traffic lights):
+sgwebapp install "Solaree" "https://solaree.ai/index_cn.html" --engine chrome
 ```
 
 Once installed:
