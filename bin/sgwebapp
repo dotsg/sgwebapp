@@ -1,0 +1,570 @@
+#!/bin/bash
+
+# sgwebapp - Fast, native Web App manager for macOS
+# Brings Omarchy's seamless web app experience to macOS users.
+# Reuses Chrome's native session, cookies, and profile.
+
+set -euo pipefail
+
+VERSION="1.0.0"
+CONFIG_DIR="$HOME/.config/sgwebapp"
+APPS_DIR="$HOME/Applications"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BORDER_BIN="$SCRIPT_DIR/sgwebapp-border"
+PID_FILE="$CONFIG_DIR/border.pid"
+CLEANUP_DIRS=()
+
+cleanup() {
+  local dir
+  for dir in "${CLEANUP_DIRS[@]:-}"; do
+    if [[ -n "$dir" && -d "$dir" ]]; then
+      rm -rf "$dir"
+    fi
+  done
+}
+trap cleanup EXIT
+
+# Colors for terminal output
+BOLD="\033[1m"
+GREEN="\033[0;32m"
+BLUE="\033[0;34m"
+YELLOW="\033[0;33m"
+RED="\033[0;31m"
+RESET="\033[0m"
+
+log_info() { echo -e "${BLUE}==>${RESET} ${BOLD}$1${RESET}"; }
+log_success() { echo -e "${GREEN}==>${RESET} ${BOLD}$1${RESET}"; }
+log_warn() { echo -e "${YELLOW}Warning:${RESET} $1"; }
+log_error() { echo -e "${RED}Error:${RESET} $1" >&2; }
+
+print_help() {
+  cat <<EOF
+${BOLD}sgwebapp${RESET} - Native Web App manager for macOS (v${VERSION})
+Brings Omarchy's seamless web app experience to macOS.
+
+${BOLD}USAGE:${RESET}
+  sgwebapp <command> [arguments]
+
+${BOLD}COMMANDS:${RESET}
+  install <name> <url> [icon]   Install a web app to ~/Applications
+  list                          List all installed web apps
+  launch <name|url>             Launch an installed web app or arbitrary URL
+  remove <name>                 Remove an installed web app
+  border <start|stop|status|run> Manage the native floating window border daemon
+  version                       Show version information
+  help                          Show this help message
+
+${BOLD}EXAMPLES:${RESET}
+  sgwebapp install "Solaree" "https://solaree.ai/index_cn.html"
+  sgwebapp install "Google Maps" "https://www.google.com/maps"
+  sgwebapp list
+  sgwebapp launch "Solaree"
+  sgwebapp border start --color 89b4fa --width 2.5
+  sgwebapp remove "Solaree"
+
+EOF
+}
+
+# Find Chromium browser
+find_chromium_browser() {
+  if [[ -n "${SGWEBAPP_BROWSER:-}" && -x "$SGWEBAPP_BROWSER" ]]; then
+    printf '%s' "$SGWEBAPP_BROWSER"
+    return 0
+  fi
+
+  local candidates=(
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    "$HOME/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
+    "$HOME/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
+    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"
+    "$HOME/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"
+    "/Applications/Arc.app/Contents/MacOS/Arc"
+    "/Applications/Chromium.app/Contents/MacOS/Chromium"
+  )
+
+  for bin in "${candidates[@]}"; do
+    if [[ -x "$bin" ]]; then
+      printf '%s' "$bin"
+      return 0
+    fi
+  done
+
+  log_error "No Chromium-based browser found. Please install Google Chrome, Brave, or Edge."
+  exit 1
+}
+
+# Normalize and validate URL
+normalize_url() {
+  local url="$1"
+  if [[ ! "$url" =~ ^[a-zA-Z][a-zA-Z0-9+.-]*:// ]]; then
+    url="https://$url"
+  fi
+
+  if [[ ! "$url" =~ ^https?:// ]]; then
+    log_error "Web app URL must start with http:// or https://"
+    exit 1
+  fi
+
+  if [[ "$url" =~ [[:space:]] ]]; then
+    log_error "Web app URL cannot contain spaces"
+    exit 1
+  fi
+
+  printf '%s' "$url"
+}
+
+# Sanitize app name for filenames and bundle identifier
+safe_app_name() {
+  printf '%s' "$1" | sed 's/[^a-zA-Z0-9_-]//g' | tr '[:upper:]' '[:lower:]'
+}
+
+# Validate app name
+validate_name() {
+  local name="$1"
+  if [[ -z "$name" ]]; then
+    log_error "App name cannot be empty."
+    exit 1
+  fi
+  if [[ "$name" == *"/"* ]]; then
+    log_error "App name cannot contain '/': $name"
+    exit 1
+  fi
+  if [[ "$name" == "."* ]]; then
+    log_error "App name cannot start with a dot: $name"
+    exit 1
+  fi
+}
+
+# Fetch site icon or convert custom icon
+prepare_icon() {
+  local site_url="$1"
+  local icon_arg="${2:-}"
+  local iconset_dir="$3"
+  local temp_dir="$4"
+  local raw_icon="$temp_dir/raw_icon.png"
+
+  mkdir -p "$iconset_dir"
+
+  local downloaded_raw="$temp_dir/raw_downloaded"
+
+  # Case 1: Custom local image file
+  if [[ -n "$icon_arg" && -f "$icon_arg" ]]; then
+    log_info "Using provided local icon: $icon_arg"
+    cp "$icon_arg" "$downloaded_raw"
+  # Case 2: Custom image URL
+  elif [[ -n "$icon_arg" && "$icon_arg" =~ ^https?:// ]]; then
+    log_info "Downloading icon from: $icon_arg"
+    curl -fsSL -L --max-time 10 "$icon_arg" -o "$downloaded_raw" 2>/dev/null || true
+  fi
+
+  # Case 3: Auto-detect from website HTML
+  if [[ ! -s "$downloaded_raw" ]]; then
+    log_info "Fetching high-resolution icon from $site_url..."
+    local origin
+    origin=$(sed -E 's|^(https?://[^/]+).*|\1|' <<<"$site_url")
+    local domain
+    domain=$(sed -E 's|^https?://([^/:]+).*|\1|' <<<"$site_url")
+
+    local html_file="$temp_dir/site.html"
+    curl -fsSL -L --max-time 8 "$site_url" -o "$html_file" 2>/dev/null || true
+
+    local icon_url=""
+    if [[ -s "$html_file" ]]; then
+      # Extract all <link> tags
+      local link_tags
+      link_tags=$(grep -oiE '<link[^>]+>' "$html_file" || true)
+
+      # 1. Try apple-touch-icon
+      local apple_tag
+      apple_tag=$(grep -i 'apple-touch-icon' <<<"$link_tags" | head -1 || true)
+      if [[ -n "$apple_tag" ]]; then
+        icon_url=$(grep -oiE 'href=["'\''][^"'\'']+' <<<"$apple_tag" | head -1 | sed -E 's/^href=["'\'']//' || true)
+      fi
+
+      # 2. Try generic rel="icon"
+      if [[ -z "$icon_url" ]]; then
+        local icon_tag
+        icon_tag=$(grep -iE 'rel=["'\''][^"'\'']*icon' <<<"$link_tags" | head -1 || true)
+        if [[ -n "$icon_tag" ]]; then
+          icon_url=$(grep -oiE 'href=["'\''][^"'\'']+' <<<"$icon_tag" | head -1 | sed -E 's/^href=["'\'']//' || true)
+        fi
+      fi
+    fi
+
+    if [[ -n "$icon_url" ]]; then
+      case "$icon_url" in
+        http://* | https://*) ;;
+        //*) icon_url="https:$icon_url" ;;
+        /*) icon_url="$origin$icon_url" ;;
+        *) icon_url="$origin/$icon_url" ;;
+      esac
+      curl -fsSL -L --max-time 8 "$icon_url" -o "$downloaded_raw" 2>/dev/null || true
+    fi
+
+    # Fallback 1: origin/apple-touch-icon.png
+    if [[ ! -s "$downloaded_raw" ]]; then
+      curl -fsSL -L --max-time 5 "$origin/apple-touch-icon.png" -o "$downloaded_raw" 2>/dev/null || true
+    fi
+
+    # Fallback 2: Google 256px Favicon API
+    if [[ ! -s "$downloaded_raw" ]]; then
+      curl -fsSL -L --max-time 6 "https://www.google.com/s2/favicons?domain=${domain}&sz=256" -o "$downloaded_raw" 2>/dev/null || true
+    fi
+  fi
+
+  # Convert downloaded raw image to standardized PNG
+  if [[ -s "$downloaded_raw" ]]; then
+    sips -s format png "$downloaded_raw" --out "$raw_icon" >/dev/null 2>&1 || cp "$downloaded_raw" "$raw_icon"
+  fi
+
+  # Fallback 3: Generate a clean fallback PNG if all fetches failed
+  if [[ ! -s "$raw_icon" ]]; then
+    log_warn "Could not fetch remote favicon. Generating clean fallback icon."
+    python3 -c "
+import zlib, struct
+raw = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xb8\xd2\xfe\x0f\x00\x02\x15\x01\x19\xa2\x8e\x9e\xa6\x00\x00\x00\x00IEND\xaeB\`\x82'
+with open('$raw_icon', 'wb') as f:
+    f.write(raw)
+"
+  fi
+
+  # Build complete macOS .iconset using sips
+  local sizes=(
+    "icon_16x16.png:16"
+    "icon_16x16@2x.png:32"
+    "icon_32x32.png:32"
+    "icon_32x32@2x.png:64"
+    "icon_128x128.png:128"
+    "icon_128x128@2x.png:256"
+    "icon_256x256.png:256"
+    "icon_256x256@2x.png:512"
+    "icon_512x512.png:512"
+    "icon_512x512@2x.png:1024"
+  )
+
+  for entry in "${sizes[@]}"; do
+    local filename="${entry%%:*}"
+    local s="${entry##*:}"
+    sips -z "$s" "$s" "$raw_icon" --out "$iconset_dir/$filename" >/dev/null 2>&1 || true
+  done
+}
+
+# Install subcommand
+cmd_install() {
+  if (( $# < 2 )); then
+    echo -e "${BOLD}Create a new macOS Web App${RESET}"
+    read -rp "App Name (e.g. Solaree): " app_name
+    read -rp "App URL (e.g. https://solaree.ai/index_cn.html): " app_url
+    read -rp "Custom Icon URL/path (optional, press Enter to auto-detect): " custom_icon
+  else
+    local app_name="$1"
+    local app_url="$2"
+    local custom_icon="${3:-}"
+  fi
+
+  validate_name "$app_name"
+  local url
+  url=$(normalize_url "$app_url")
+  local browser_exec
+  browser_exec=$(find_chromium_browser)
+
+  local safe_id
+  safe_id=$(safe_app_name "$app_name")
+  [[ -z "$safe_id" ]] && safe_id="app"
+
+  local app_bundle="$APPS_DIR/$app_name.app"
+  local macos_dir="$app_bundle/Contents/MacOS"
+  local resources_dir="$app_bundle/Contents/Resources"
+
+  log_info "Installing Web App: ${BOLD}$app_name${RESET} -> $url"
+  mkdir -p "$APPS_DIR" "$macos_dir" "$resources_dir"
+
+  # Icon generation
+  local temp_dir
+  temp_dir=$(mktemp -d)
+  CLEANUP_DIRS+=("$temp_dir")
+  local iconset_dir="$temp_dir/AppIcon.iconset"
+
+  prepare_icon "$url" "$custom_icon" "$iconset_dir" "$temp_dir"
+
+  local icns_dest="$resources_dir/AppIcon.icns"
+  iconutil -c icns "$iconset_dir" -o "$icns_dest" 2>/dev/null || true
+
+  # Create executable launcher
+  local launcher_file="$macos_dir/launcher"
+  cat > "$launcher_file" <<EOF
+#!/bin/bash
+# Generated by sgwebapp
+exec "$browser_exec" --app="$url" "\$@"
+EOF
+  chmod +x "$launcher_file"
+
+  # Create Info.plist
+  cat > "$app_bundle/Contents/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key>
+  <string>launcher</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.sgwebapp.app.${safe_id}</string>
+  <key>CFBundleName</key>
+  <string>${app_name}</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>1.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>LSMinimumSystemVersion</key>
+  <string>11.0</string>
+</dict>
+</plist>
+EOF
+
+  # Save sgwebapp metadata
+  local created_date
+  created_date=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  cat > "$resources_dir/sgwebapp.json" <<EOF
+{
+  "name": "$app_name",
+  "url": "$url",
+  "browser": "$browser_exec",
+  "bundle_id": "com.sgwebapp.app.${safe_id}",
+  "created_at": "$created_date"
+}
+EOF
+
+  # Register with macOS LaunchServices
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$app_bundle" 2>/dev/null || touch "$app_bundle"
+
+  log_success "Web App successfully installed to:"
+  echo "    $app_bundle"
+  echo ""
+  echo -e "  • ${BOLD}Launch with Spotlight:${RESET} Press ${GREEN}Cmd + Space${RESET}, type '${app_name}' and Enter"
+  echo -e "  • ${BOLD}Launch with CLI:${RESET}       sgwebapp launch \"$app_name\""
+  echo -e "  • ${BOLD}Add Window Border:${RESET}     sgwebapp border start"
+  echo ""
+}
+
+# List subcommand
+cmd_list() {
+  local found=0
+  local format="${1:-}"
+
+  if [[ ! -d "$APPS_DIR" ]]; then
+    echo "No Web Apps installed in $APPS_DIR"
+    return 0
+  fi
+
+  local apps=()
+  while IFS= read -r -d '' app_path; do
+    if [[ -f "$app_path/Contents/Resources/sgwebapp.json" ]]; then
+      apps+=("$app_path")
+    fi
+  done < <(find "$APPS_DIR" -maxdepth 1 -name "*.app" -print0 2>/dev/null)
+
+  if (( ${#apps[@]} == 0 )); then
+    echo "No sgwebapp Web Apps found in $APPS_DIR"
+    return 0
+  fi
+
+  printf "%-25s %-45s %s\n" "APP NAME" "URL" "PATH" 2>/dev/null || true
+  printf "%-25s %-45s %s\n" "--------" "---" "----" 2>/dev/null || true
+
+  for app_path in "${apps[@]}"; do
+    local meta="$app_path/Contents/Resources/sgwebapp.json"
+    local name url
+    name=$(python3 -c "import json; print(json.load(open('$meta')).get('name',''))" 2>/dev/null || basename "$app_path" .app)
+    url=$(python3 -c "import json; print(json.load(open('$meta')).get('url',''))" 2>/dev/null || echo "unknown")
+    printf "%-25s %-45s %s\n" "$name" "$url" "$app_path" 2>/dev/null || true
+    found=1
+  done
+}
+
+# Launch subcommand
+cmd_launch() {
+  if (( $# == 0 )); then
+    log_error "Usage: sgwebapp launch <name|url>"
+    exit 1
+  fi
+
+  local target="$1"
+  shift
+
+  # If it's an installed app name
+  local app_path="$APPS_DIR/$target.app"
+  if [[ -d "$app_path" ]]; then
+    log_info "Launching $target..."
+    open "$app_path" --args "$@"
+    return 0
+  fi
+
+  # If it's a URL
+  if [[ "$target" =~ ^https?:// ]]; then
+    local browser_exec
+    browser_exec=$(find_chromium_browser)
+    log_info "Opening $target as web app..."
+    exec "$browser_exec" --app="$target" "$@"
+  fi
+
+  log_error "Could not find installed web app named '$target'. Run 'sgwebapp list' to see installed apps."
+  exit 1
+}
+
+# Remove subcommand
+cmd_remove() {
+  if (( $# == 0 )); then
+    log_info "Select a web app to remove:"
+    local apps=()
+    while IFS= read -r -d '' app_path; do
+      if [[ -f "$app_path/Contents/Resources/sgwebapp.json" ]]; then
+        apps+=("$(basename "$app_path" .app)")
+      fi
+    done < <(find "$APPS_DIR" -maxdepth 1 -name "*.app" -print0 2>/dev/null)
+
+    if (( ${#apps[@]} == 0 )); then
+      echo "No web apps to remove."
+      return 0
+    fi
+
+    select chosen in "${apps[@]}" "Cancel"; do
+      if [[ "$chosen" == "Cancel" || -z "$chosen" ]]; then
+        echo "Cancelled."
+        return 0
+      fi
+      local app_name="$chosen"
+      break
+    done
+  else
+    local app_name="$1"
+  fi
+
+  local app_path="$APPS_DIR/$app_name.app"
+  if [[ ! -d "$app_path" ]]; then
+    log_error "Web App '$app_name' not found at $app_path"
+    exit 1
+  fi
+
+  # Deregister from LaunchServices
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "$app_path" 2>/dev/null || true
+
+  rm -rf "$app_path"
+  log_success "Removed Web App: $app_name"
+}
+
+# Border daemon management
+cmd_border() {
+  local action="${1:-status}"
+  shift || true
+
+  mkdir -p "$CONFIG_DIR"
+
+  # Ensure border daemon binary is compiled
+  if [[ ! -x "$BORDER_BIN" ]]; then
+    log_info "Compiling native Swift border daemon..."
+    swiftc -O "$SCRIPT_DIR/../src/border/main.swift" -o "$BORDER_BIN"
+  fi
+
+  case "$action" in
+    start)
+      if [[ -f "$PID_FILE" ]]; then
+        local pid
+        pid=$(cat "$PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+          log_warn "Border daemon is already running (PID: $pid)."
+          return 0
+        fi
+      fi
+      log_info "Starting border daemon..."
+      nohup "$BORDER_BIN" "$@" > "$CONFIG_DIR/border.log" 2>&1 &
+      local new_pid=$!
+      echo "$new_pid" > "$PID_FILE"
+      sleep 0.2
+      if kill -0 "$new_pid" 2>/dev/null; then
+        log_success "Border daemon started (PID: $new_pid). Logs: $CONFIG_DIR/border.log"
+      else
+        log_error "Border daemon failed to start. Check $CONFIG_DIR/border.log"
+        exit 1
+      fi
+      ;;
+    stop)
+      if [[ -f "$PID_FILE" ]]; then
+        local pid
+        pid=$(cat "$PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+          kill "$pid" 2>/dev/null || true
+          log_success "Stopped border daemon (PID: $pid)."
+        else
+          log_warn "Border daemon process ($pid) not found."
+        fi
+        rm -f "$PID_FILE"
+      else
+        # Fallback killall
+        pkill -f "sgwebapp-border" 2>/dev/null || true
+        log_info "No border PID file found; killed any running instances."
+      fi
+      ;;
+    status)
+      if [[ -f "$PID_FILE" ]]; then
+        local pid
+        pid=$(cat "$PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+          echo -e "Border daemon is ${GREEN}running${RESET} (PID: $pid)"
+          return 0
+        fi
+      fi
+      echo -e "Border daemon is ${YELLOW}stopped${RESET}"
+      ;;
+    run)
+      log_info "Running border daemon in foreground (Ctrl+C to stop)..."
+      exec "$BORDER_BIN" "$@"
+      ;;
+    *)
+      log_error "Unknown border action: $action. Use start, stop, status, or run."
+      exit 1
+      ;;
+  esac
+}
+
+# Main routing
+main() {
+  local base_name
+  base_name="$(basename "$0")"
+
+  case "$base_name" in
+    sgwebapp-install) cmd_install "$@"; return ;;
+    sgwebapp-list) cmd_list "$@"; return ;;
+    sgwebapp-launch) cmd_launch "$@"; return ;;
+    sgwebapp-remove) cmd_remove "$@"; return ;;
+  esac
+
+  if (( $# == 0 )); then
+    print_help
+    exit 0
+  fi
+
+  local cmd="$1"
+  shift
+
+  case "$cmd" in
+    install) cmd_install "$@" ;;
+    list) cmd_list "$@" ;;
+    launch) cmd_launch "$@" ;;
+    remove) cmd_remove "$@" ;;
+    border) cmd_border "$@" ;;
+    version | -v | --version) echo "sgwebapp version $VERSION" ;;
+    help | -h | --help) print_help ;;
+    *)
+      log_error "Unknown command: $cmd"
+      print_help
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

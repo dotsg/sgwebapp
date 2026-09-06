@@ -1,0 +1,10 @@
+# Build artifacts
+bin/sgwebapp-border
+
+# macOS system files
+.DS_Store
+
+# Logs & temp
+*.log
+*.pid
+.tmp/
