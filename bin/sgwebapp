@@ -82,6 +82,7 @@ ${BOLD}OPTIONS (install):${RESET}
   --border-radius <radius>      Corner radius in pt (default: 26.0)
   --padding <pt>                Content padding inside the border in pt (default: 8.0)
   --icon <path|url>             Custom application icon
+  --user-agent <string>         Custom User-Agent (defaults to modern Safari desktop)
   --no-share-login              Do not sync SSO cookies with other sgwebapp apps
   --force                       Overwrite an existing app bundle of the same name
 
@@ -437,6 +438,7 @@ cmd_install() {
   local app_name=""
   local app_url=""
   local custom_icon=""
+  local user_agent=""
   local engine="$def_engine"
   local border_color="$def_color"
   local border_width="$def_width"
@@ -463,6 +465,7 @@ cmd_install() {
       --border-radius|--radius) need_value "$@"; border_radius="$2"; shift 2 ;;
       --padding) need_value "$@"; content_padding="$2"; shift 2 ;;
       --icon) need_value "$@"; custom_icon="$2"; shift 2 ;;
+      --user-agent|--ua) need_value "$@"; user_agent="$2"; shift 2 ;;
       --no-share-login) share_login="false"; shift ;;
       --share-login) share_login="true"; shift ;;
       --force) force=1; shift ;;
@@ -617,6 +620,12 @@ EOF
   local share_login_xml="<false/>"
   [[ "$share_login" == "true" ]] && share_login_xml="<true/>"
 
+  local user_agent_xml=""
+  if [[ -n "$user_agent" ]]; then
+    user_agent_xml="  <key>SGWebAppUserAgent</key>
+  <string>$(xml_escape "$user_agent")</string>"
+  fi
+
   # Create Info.plist
   cat > "$app_bundle/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -647,6 +656,7 @@ EOF
   <string>${esc_url}</string>
   <key>SGWebAppShareLogin</key>
   ${share_login_xml}
+${user_agent_xml}
   <key>SGWebAppBorderColor</key>
   <string>${esc_color}</string>
   <key>SGWebAppBorderWidth</key>
@@ -666,12 +676,15 @@ EOF
   # backslashes cannot produce a malformed metadata file.
   local browser_json="null"
   [[ -n "$browser_exec" ]] && browser_json=$(json_string "$browser_exec")
+  local ua_json="null"
+  [[ -n "$user_agent" ]] && ua_json=$(json_string "$user_agent")
   cat > "$resources_dir/sgwebapp.json" <<EOF
 {
   "name": $(json_string "$app_name"),
   "url": $(json_string "$url"),
   "engine": $(json_string "$engine"),
   "browser": $browser_json,
+  "user_agent": $ua_json,
   "border_color": $(json_string "$border_color"),
   "border_width": $border_width,
   "border_radius": $border_radius,

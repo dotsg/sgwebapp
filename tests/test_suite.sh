@@ -109,6 +109,17 @@ else
 fi
 rm -rf "$SGWEBAPP_APPS_DIR/微博.app" "$SGWEBAPP_APPS_DIR/知乎.app"
 
+# Test custom user-agent flag
+"$BIN" install "UATest" "https://example.com" --user-agent "CustomAgent/1.0" >/dev/null 2>&1
+ua_plist=$(defaults read "$SGWEBAPP_APPS_DIR/UATest.app/Contents/Info.plist" SGWebAppUserAgent 2>/dev/null || echo "")
+ua_json=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('user_agent', ''))" "$SGWEBAPP_APPS_DIR/UATest.app/Contents/Resources/sgwebapp.json" 2>/dev/null || echo "")
+if [[ "$ua_plist" == "CustomAgent/1.0" && "$ua_json" == "CustomAgent/1.0" ]]; then
+  pass "install --user-agent writes custom UA to Info.plist and sgwebapp.json"
+else
+  fail "install --user-agent failed to store custom UA (plist: $ua_plist, json: $ua_json)"
+fi
+rm -rf "$SGWEBAPP_APPS_DIR/UATest.app"
+
 # ---------------------------------------------------------------- safety
 if "$BIN" install "$TEST_APP_NAME" "$TEST_APP_URL" --engine bogus >/dev/null 2>&1; then
   fail "install accepted an invalid --engine value"

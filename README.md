@@ -132,6 +132,9 @@ sgwebapp install "WhatsApp Web" "https://web.whatsapp.com" --padding 0.0
 
 # Custom accent style for a specific app
 sgwebapp install "GitHub" "https://github.com" --border-color "3b82f6" --border-width 2.0 --border-radius 26.0 --padding 8.0
+
+# Custom User-Agent (Native engine defaults to modern desktop Safari UA, but can be overridden)
+sgwebapp install "SpecialApp" "https://example.com" --user-agent "CustomUserAgent/1.0"
 ```
 
 ---

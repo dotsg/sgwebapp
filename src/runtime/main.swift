@@ -212,6 +212,28 @@ var sharedDomains: [String] = {
     return defaultSharedDomains()
 }()
 
+var customUserAgent: String? = {
+    if let ua = Bundle.main.object(forInfoDictionaryKey: "SGWebAppUserAgent") as? String, !ua.isEmpty {
+        return ua
+    }
+    if let ua = globalConfig["user_agent"] as? String, !ua.isEmpty {
+        return ua
+    }
+    return nil
+}()
+
+func resolveDefaultUserAgent() -> String {
+    // Default WKWebView UA lacks "Version/<ver> Safari/<build>", causing sites like
+    // WhatsApp Web to report "WhatsApp works with Safari 15+ - please update Safari".
+    // We synthesize a complete, modern Safari desktop user agent.
+    var safariVersion = "18.3"
+    if let info = NSDictionary(contentsOfFile: "/Applications/Safari.app/Contents/Info.plist"),
+       let ver = info["CFBundleShortVersionString"] as? String, !ver.isEmpty {
+        safariVersion = ver
+    }
+    return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/\(safariVersion) Safari/605.1.15"
+}
+
 var windowWidth: CGFloat = 1200
 var windowHeight: CGFloat = 800
 var explicitWindowSize = false
@@ -236,6 +258,8 @@ while let arg = args.first {
         if let val = args.first, let w = Double(val) { windowWidth = CGFloat(w); explicitWindowSize = true; args = args.dropFirst() }
     case "--win-height":
         if let val = args.first, let h = Double(val) { windowHeight = CGFloat(h); explicitWindowSize = true; args = args.dropFirst() }
+    case "--user-agent", "--ua":
+        if let val = args.first { customUserAgent = val; args = args.dropFirst() }
     case "--no-share-login":
         shareLogin = false
     default:
@@ -526,6 +550,7 @@ final class WebPolicyDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         // The configuration handed to us must be the one used, otherwise the new
         // web view is not in the opener's process/session and OAuth breaks.
         let popup = WKWebView(frame: .zero, configuration: configuration)
+        popup.customUserAgent = webView.customUserAgent ?? customUserAgent ?? resolveDefaultUserAgent()
         popup.navigationDelegate = self
         popup.uiDelegate = self
         popup.allowsBackForwardNavigationGestures = true
@@ -675,6 +700,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let totalInset = contentPadding > 0 ? contentPadding : borderWidth
         let webFrame = borderView.bounds.insetBy(dx: totalInset, dy: totalInset)
         webView = WKWebView(frame: webFrame, configuration: config)
+        webView.customUserAgent = customUserAgent ?? resolveDefaultUserAgent()
         webView.autoresizingMask = [.width, .height]
         webView.wantsLayer = true
         webView.layer?.cornerRadius = max(0, cornerRadius - totalInset)

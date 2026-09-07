@@ -134,6 +134,9 @@ sgwebapp install "WhatsApp Web" "https://web.whatsapp.com" --padding 0.0
 
 # 为特定工具定制鲜明边框主题
 sgwebapp install "GitHub" "https://github.com" --border-color "3b82f6" --border-width 2.0 --border-radius 26.0 --padding 8.0
+
+# 自定义 User-Agent（Native 原生引擎默认已自动配置完整现代 Safari 桌面 UA，亦可手动指定）
+sgwebapp install "SpecialApp" "https://example.com" --user-agent "CustomUserAgent/1.0"
 ```
 
 ---
