@@ -11,7 +11,7 @@
 
 - **🚫 True 0-Topbar & 0-Traffic-Light Mode (Native Engine, Default)**: A compiled native Cocoa/WebKit runner that creates 100% frameless windows with zero title bars and zero traffic lights, surrounded by a customizable Hyprland-style rounded accent border.
 - **🍪 Two Engines, One Real Trade-off**: macOS draws the traffic lights inside the browser's own process, so *frameless* and *reuses Chrome's live session* cannot both be true. Pick per app:
-  - **Native Engine (`--engine native`, Default)**: Completely frameless (0 titlebar, 0 traffic lights), native WebKit, independent Dock icon and name, its own persistent cookie store. **Sites start out logged out** — see below.
+  - **Native Engine (`--engine native` or `--engine safari`, Default)**: Completely frameless (0 titlebar, 0 traffic lights), native WebKit (Safari's rendering engine), independent Dock icon and name, its own persistent cookie store. **Sites start out logged out** — see below.
   - **Chrome Engine (`--engine chrome`)**: Direct Chromium `--app` mode reusing Google Chrome's live profile and cookies, but keeping the standard macOS title bar. Use it for Widevine DRM, Chrome-bound passkeys, or extension-dependent sites.
 - **🔑 Login Handling for the Native Engine**: `sgwebapp import-cookies <app>` seeds an app from your Chrome profile, and SSO cookies are synced between sgwebapp apps so you sign in to Google or GitHub once. Both are explained — including their limits and the security trade-off — in [docs/cookies.md](docs/cookies.md).
 - **🎨 Retina macOS Icons (`.icns`)**: Automatically downloads high-resolution `apple-touch-icon` from target pages and builds native multi-size Apple `.icns` packages using macOS built-in `sips` and `iconutil`.

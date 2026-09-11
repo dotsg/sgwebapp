@@ -121,6 +121,18 @@ fi
 rm -rf "$SGWEBAPP_APPS_DIR/UATest.app"
 
 # ---------------------------------------------------------------- safety
+if "$BIN" install "SafariTest" "$TEST_APP_URL" --engine safari >/dev/null 2>&1; then
+  safari_engine=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('engine', ''))" "$SGWEBAPP_APPS_DIR/SafariTest.app/Contents/Resources/sgwebapp.json" 2>/dev/null || echo "")
+  if [[ "$safari_engine" == "native" ]]; then
+    pass "install --engine safari normalizes to native WebKit engine"
+  else
+    fail "install --engine safari wrote engine '$safari_engine'"
+  fi
+  rm -rf "$SGWEBAPP_APPS_DIR/SafariTest.app"
+else
+  fail "install --engine safari failed"
+fi
+
 if "$BIN" install "$TEST_APP_NAME" "$TEST_APP_URL" --engine bogus >/dev/null 2>&1; then
   fail "install accepted an invalid --engine value"
 else
@@ -217,6 +229,14 @@ if grep -q "share_login:   false" <<<"$cfg_out"; then
   pass "sgwebapp config set share_login stores a real boolean"
 else
   fail "sgwebapp config set share_login failed"
+fi
+
+"$BIN" config set engine safari >/dev/null
+cfg_out=$("$BIN" config)
+if grep -q "engine:        native" <<<"$cfg_out"; then
+  pass "sgwebapp config set engine safari normalizes to native"
+else
+  fail "sgwebapp config set engine safari failed"
 fi
 
 if "$BIN" config set nonsense_key 1 >/dev/null 2>&1; then

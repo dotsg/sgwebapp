@@ -76,7 +76,7 @@ ${BOLD}COMMANDS:${RESET}
   help                          Show this help message
 
 ${BOLD}OPTIONS (install):${RESET}
-  --engine <native|chrome>      Renderer engine (native: 0-bar + border; chrome: uses Chrome session)
+  --engine <native|chrome>      Renderer engine (native/safari: 0-bar + border; chrome: uses Chrome session)
   --border-color <color>        Border color: tahoe (default), auto, or hex (e.g. 89b4fa)
   --border-width <width>        Border stroke width in pt (default: 0.5)
   --border-radius <radius>      Corner radius in pt (default: 26.0)
@@ -476,7 +476,8 @@ cmd_install() {
 
   case "$engine" in
     native|chrome) ;;
-    *) log_error "Unknown engine '$engine'. Use 'native' or 'chrome'."; exit 1 ;;
+    safari|webkit) engine="native" ;;
+    *) log_error "Unknown engine '$engine'. Use 'native' (or 'safari') or 'chrome'."; exit 1 ;;
   esac
 
   if (( ${#pos_args[@]} < 2 )); then
@@ -1080,7 +1081,7 @@ cmd_config() {
       echo "  • border_width:  $cur_width pt"
       echo "  • border_radius: $cur_radius pt (macOS continuous squircle)"
       echo "  • padding:       $cur_padding pt (Content inset margin)"
-      echo "  • engine:        $cur_engine (options: native, chrome)"
+      echo "  • engine:        $cur_engine (options: native, chrome; aliases: safari, webkit)"
       echo "  • share_login:   $cur_share (sync SSO cookies between sgwebapp apps)"
       echo ""
       echo "Config file: $CONFIG_FILE"
@@ -1101,6 +1102,16 @@ cmd_config() {
           exit 1
           ;;
       esac
+      if [[ "$k" == "engine" ]]; then
+        case "$v" in
+          native|chrome) ;;
+          safari|webkit) v="native" ;;
+          *)
+            log_error "engine must be 'native' (or 'safari') or 'chrome'."
+            exit 1
+            ;;
+        esac
+      fi
       set_config_val "$k" "$v"
       log_success "Updated $k = $v in $CONFIG_FILE"
       ;;

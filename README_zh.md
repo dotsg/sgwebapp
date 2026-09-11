@@ -11,7 +11,7 @@
 
 - **🚫 真正的“0 顶栏 + 0 交通灯”模式（原生 Native 引擎，默认）**：基于轻量级 Cocoa / WebKit 原生编译运行时，打造 100% 真正无边框窗口，去除传统标题栏与红黄绿交通灯，呈现完全自适应的 macOS 系统级圆角和毛玻璃边框。
 - **🍪 双引擎设计，直面核心权衡**：macOS 的交通灯按钮是由 AppKit 在浏览器进程内部绘制的，因此在系统底层“真正无顶栏”与“直接复用 Chrome 实时会话”不可兼得。您可以按需为每个应用单独选择引擎：
-  - **原生引擎 (`--engine native`，默认)**：完全无标题栏与交通灯，原生 WebKit 渲染，独立的 Dock 图标与进程名称，独立的持久化 Cookie 存储。新应用初始为未登录状态（支持一键从 Chrome 导入，详见下文）。
+  - **原生引擎 (`--engine native` 或 `--engine safari`，默认)**：完全无标题栏与交通灯，基于 Safari 渲染核心（原生 WebKit）渲染，独立的 Dock 图标与进程名称，独立的持久化 Cookie 存储。新应用初始为未登录状态（支持一键从 Chrome 导入，详见下文）。
   - **Chrome 引擎 (`--engine chrome`)**：通过 Chromium `--app` 模式运行，直接复用 Google Chrome 本地的登录会话与 Cookie，但保留标准 macOS 标题栏。适合 Widevine DRM 受保护内容（如 Netflix/Spotify）、绑定 Chrome 资料库的 Passkey 或重度依赖 Chrome 扩展的站点。
 - **🔑 原生引擎登录态方案**：提供 `sgwebapp import-cookies <应用名>` 命令，直接从 Chrome 读取并解密对应站点的 Cookie 注入应用；同时支持跨 sgwebapp 原生应用共享单点登录（SSO）Cookie（如 Google、GitHub 只需登录一次）。在 [docs/cookies.md](docs/cookies.md) 中详细解析了实现原理、边界限制与安全考量。
 - **🎨 Retina 级 macOS 原生图标 (`.icns`)**：自动抓取目标网站的高清 `apple-touch-icon`，并通过 macOS 内置的 `sips` 与 `iconutil` 工具自动编译生成包含 10 种标准尺寸的 Apple 原生 `.icns` 图标包。
