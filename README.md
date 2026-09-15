@@ -99,7 +99,7 @@ sgwebapp remove
 ## 🎨 macOS Native Window Aesthetic & Configuration (`sgwebapp config`)
 
 `sgwebapp` defaults to native macOS system window aesthetics (matching system apps like Finder, Settings, and Notes 100%):
-- **macOS continuous squircle corners**: `26.0 pt` outer corner radius using Apple's continuous G2 curvature (`.continuous`).
+- **macOS continuous squircle corners**: `16.0 pt` outer corner radius using Apple's unified continuous G2 curvature (`.continuous`).
 - **Ultra-fine glass stroke**: `0.5 pt` hairline border width (exact 1 physical pixel on Retina display).
 - **Dynamic appearance**: Border color `"tahoe"` automatically adapts to system appearance: in Light Mode, the window boundary seamlessly blends with the native macOS WindowServer compositor drop shadow for an authentic, clean native edge (eliminating double/heavy strokes on non-Retina and Retina displays alike); in Dark Mode, it renders a subtle translucent luminous outline (`alpha 0.18`) ensuring clean separation from dark wallpapers.
 - **Native content inset padding**: `8.0 pt` content inset padding revealing the frosted backdrop blur around the web application, identical to native macOS sidebar and card margins.
@@ -114,7 +114,7 @@ sgwebapp config
 # Set default border to a colorful accent (e.g. Catppuccin Blue, Emerald, or Rose)
 sgwebapp config set border_color 89b4fa
 sgwebapp config set border_width 0.5
-sgwebapp config set border_radius 26.0
+sgwebapp config set border_radius 16.0
 sgwebapp config set padding 8.0
 
 # Reset anytime back to defaults
@@ -124,14 +124,14 @@ sgwebapp config reset
 ### Per-App Customization
 You can also override the style when installing an individual app:
 ```bash
-# macOS native window style (default: radius 26pt, padding 8pt, border 0.5pt)
+# macOS native window style (default: radius 16pt, padding 8pt, border 0.5pt)
 sgwebapp install "Google Maps" "https://www.google.com/maps"
 
 # Full-bleed style without frosted margin (padding: 0)
 sgwebapp install "WhatsApp Web" "https://web.whatsapp.com" --padding 0.0
 
 # Custom accent style for a specific app
-sgwebapp install "GitHub" "https://github.com" --border-color "3b82f6" --border-width 2.0 --border-radius 26.0 --padding 8.0
+sgwebapp install "GitHub" "https://github.com" --border-color "3b82f6" --border-width 2.0 --border-radius 16.0 --padding 8.0
 
 # Custom User-Agent (Native engine defaults to modern desktop Safari UA, but can be overridden)
 sgwebapp install "SpecialApp" "https://example.com" --user-agent "CustomUserAgent/1.0"

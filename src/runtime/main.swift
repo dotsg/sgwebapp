@@ -184,12 +184,47 @@ var borderWidth: CGFloat = {
     return 0.5
 }()
 
+func systemDefaultCornerRadius() -> CGFloat {
+    if #available(macOS 27.0, *) {
+        let dummy = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 200),
+                             styleMask: [.titled, .closable, .resizable],
+                             backing: .buffered, defer: false)
+        if let radii = dummy.contentView?.effectiveCornerRadii, radii.topLeft > 0 {
+            return radii.topLeft
+        }
+    }
+    let dummy = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 200),
+                         styleMask: [.titled, .closable, .resizable],
+                         backing: .buffered, defer: false)
+    let sel = NSSelectorFromString("_cornerRadius")
+    if dummy.responds(to: sel) {
+        typealias CGFloatFunc = @convention(c) (AnyObject, Selector) -> CGFloat
+        let fn = unsafeBitCast(dummy.method(for: sel), to: CGFloatFunc.self)
+        let r = fn(dummy, sel)
+        if r > 0 { return r }
+    }
+    return 16.0
+}
+
 var cornerRadius: CGFloat = {
-    if let r = Bundle.main.object(forInfoDictionaryKey: "SGWebAppCornerRadius") as? Double { return CGFloat(r) }
-    if let n = Bundle.main.object(forInfoDictionaryKey: "SGWebAppCornerRadius") as? NSNumber { return CGFloat(n.doubleValue) }
-    if let r = globalConfig["border_radius"] as? Double { return CGFloat(r) }
-    if let n = globalConfig["border_radius"] as? NSNumber { return CGFloat(n.doubleValue) }
-    return 26.0
+    let sysRadius = systemDefaultCornerRadius()
+    if let r = Bundle.main.object(forInfoDictionaryKey: "SGWebAppCornerRadius") as? Double {
+        if r == 26.0 && sysRadius != 26.0 { return sysRadius }
+        return CGFloat(r)
+    }
+    if let n = Bundle.main.object(forInfoDictionaryKey: "SGWebAppCornerRadius") as? NSNumber {
+        if n.doubleValue == 26.0 && sysRadius != 26.0 { return sysRadius }
+        return CGFloat(n.doubleValue)
+    }
+    if let r = globalConfig["border_radius"] as? Double {
+        if r == 26.0 && sysRadius != 26.0 { return sysRadius }
+        return CGFloat(r)
+    }
+    if let n = globalConfig["border_radius"] as? NSNumber {
+        if n.doubleValue == 26.0 && sysRadius != 26.0 { return sysRadius }
+        return CGFloat(n.doubleValue)
+    }
+    return sysRadius
 }()
 
 var contentPadding: CGFloat = {
@@ -289,7 +324,7 @@ class BorderView: NSView {
     let visualEffectView = NSVisualEffectView()
     weak var webView: WKWebView?
     var currentBorderWidth: CGFloat = 0.5
-    var currentCornerRadius: CGFloat = 26.0
+    var currentCornerRadius: CGFloat = 16.0
     var currentPadding: CGFloat = 8.0
     var colorSpec: String = "tahoe"
 

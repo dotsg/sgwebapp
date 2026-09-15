@@ -99,7 +99,7 @@ sgwebapp remove
 ## 🎨 macOS 原生系统窗口美学与全局配置 (`sgwebapp config`)
 
 `sgwebapp` 默认遵循 macOS 原生系统窗口设计规范（与 Finder、系统设置、备忘录等系统原生 App 100% 保持一致）：
-- **macOS 连续超椭圆圆角**：外层窗口圆角统一为 `26.0 pt`，采用与苹果硬件及系统一致的 G2 连续曲率（`.continuous` Squircle）。
+- **macOS 连续超椭圆圆角**：外层窗口圆角统一为 `16.0 pt`，采用与苹果硬件及系统一致的 G2 连续曲率（`.continuous` Squircle）。
 - **极细微光描边**：`0.5 pt` 发丝级边框宽度（在 Retina 视网膜屏上精确对齐 1 个物理像素）。
 - **自适应动态外观 (`tahoe`)**：边框颜色默认自适应系统明暗模式：
   - **浅色模式 (Light Mode)**：边框自然融入 macOS WindowServer 窗口合成器的原生投影，呈现干净纯粹的原生边缘（彻底消除标准屏幕及 Retina 屏上的人造粗重黑线）；
@@ -116,7 +116,7 @@ sgwebapp config
 # 将全局默认边框修改为您喜欢的色彩（例如 Catppuccin Blue、Emerald 绿或玫瑰色）
 sgwebapp config set border_color 89b4fa
 sgwebapp config set border_width 0.5
-sgwebapp config set border_radius 26.0
+sgwebapp config set border_radius 16.0
 sgwebapp config set padding 8.0
 
 # 随时一键重置回系统推荐默认值
@@ -126,14 +126,14 @@ sgwebapp config reset
 ### 单个应用独立配置
 安装单个应用时也可以直接覆盖样式参数：
 ```bash
-# 原生系统标准风格（默认：圆角 26pt，边距 8pt，边框 0.5pt）
+# 原生系统标准风格（默认：圆角 16pt，边距 8pt，边框 0.5pt）
 sgwebapp install "Google Maps" "https://www.google.com/maps"
 
 # 全通铺满无白边风格（padding 为 0）
 sgwebapp install "WhatsApp Web" "https://web.whatsapp.com" --padding 0.0
 
 # 为特定工具定制鲜明边框主题
-sgwebapp install "GitHub" "https://github.com" --border-color "3b82f6" --border-width 2.0 --border-radius 26.0 --padding 8.0
+sgwebapp install "GitHub" "https://github.com" --border-color "3b82f6" --border-width 2.0 --border-radius 16.0 --padding 8.0
 
 # 自定义 User-Agent（Native 原生引擎默认已自动配置完整现代 Safari 桌面 UA，亦可手动指定）
 sgwebapp install "SpecialApp" "https://example.com" --user-agent "CustomUserAgent/1.0"
